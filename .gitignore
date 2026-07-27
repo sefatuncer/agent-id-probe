@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+
+# Raw measurement data (large, regenerable; snapshots are published separately)
+data/raw/**
+!data/raw/.gitkeep
+
+# Run outputs
+results/runs/**
+!results/runs/.gitkeep
+
+# Local environment
+.env
+*.local

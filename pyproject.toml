@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-id-probe"
+version = "0.1.0"
+description = "Passive, spec-anchored measurement of identity and authorization metadata in deployed AI agent endpoints"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Sefa Tuncer" },
+    { name = "Enis Karaarslan" },
+]
+keywords = ["agent identity", "A2A", "MCP", "OAuth", "did:web", "verifiable credentials", "measurement"]
+
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.7",
+    "joserfc>=1.0",
+    "cryptography>=42.0",
+    "pyyaml>=6.0",
+    "pandas>=2.2",
+    "matplotlib>=3.9",
+    "tenacity>=8.3",
+    "protego>=0.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+agent-id-probe = "agentidprobe.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentidprobe"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
