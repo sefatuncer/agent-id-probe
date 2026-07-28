@@ -96,14 +96,29 @@ müsamahakâr yürürlükteki revizyona** göre puanlanır. Şüphe deployment l
 
 ---
 
-## R8 — İki kodlayıcı mutabakatı 📋 *(koşum protokolü)*
+## R8 — Enstrüman geçerliliği: fikstür paketi + replay determinizmi ⚙️
 
-`FAIL_MISIMPLEMENTED` ile `UNSPECIFIED` arasındaki sınır, n≈100'lük katmanlı bir örnekte
-iki bağımsız kodlayıcı tarafından kör olarak kodlanır ve **Cohen kappa** raporlanır.
-Önceden ilan edilen eşik: **κ ≥ 0,70**. Altında kalırsa sınır kuralı yeniden yazılır ve
-tüm veri yeniden kodlanır.
+*Bu kural 28 Temmuz 2026'da yeniden yazıldı. Önceki hali iki bağımsız insan kodlayıcı ve
+Cohen kappa istiyordu. Bu, **rubrik puanlayan** bir tasarımın geçerlilik aracıdır ve bizim
+tasarımımıza uymuyor: buradaki kontroller mekaniktir (`declared == expected`), insan yargısı
+içermez, dolayısıyla değerlendiriciler arası güvenilirlik ölçülecek bir nicelik yoktur.
+Kappa raporlamak, olmayan bir öznelliği varmış gibi göstermek olurdu.*
 
-İki kodlayıcının ikisi de makalenin yazarı olamaz (Reviewer A, M3c).
+Mekanik bir uygunluk enstrümanının geçerliliği üç ayakla kurulur:
+
+1. **Conformance fikstür paketi.** Her MUST düzeyindeki kontrol için, spec metninden
+   türetilmiş en az bir **bilinen-uyumlu** ve bir **bilinen-ihlal** fikstürü bulunur
+   (`tests/fixtures/`). Enstrüman bunları doğru sınıflandıramıyorsa veri toplanmaz.
+   Sınır vakaları (trailing slash, case, aynı host farklı yol) ayrı fikstür olarak durur.
+2. **Replay determinizmi.** Aynı ham artefakt, ağa hiç dokunmadan yeniden puanlandığında
+   **bit düzeyinde aynı** verdict'i üretmelidir. Tüm ham yanıtlar saklandığı için bu
+   otomatik olarak test edilir (`test_replay_determinism`).
+3. **R1'in makineyle zorlanması.** `CheckResult.model_post_init`, MUST çıpası olmayan bir
+   kontrolün başarısızlık raporlamasını reddeder. Öznellik girebilecek tek kapı budur ve
+   kapalıdır.
+
+**Ölçüm:** fikstür paketinde %100 doğruluk + replay determinizmi. İkisinden biri sağlanmazsa
+enstrüman düzeltilir ve tüm veri yeniden puanlanır (ham veri saklandığı için bu ücretsizdir).
 
 ---
 
