@@ -1,4 +1,4 @@
-"""Normalized data model shared by collectors, checks and analysis.
+﻿"""Normalized data model shared by collectors, checks and analysis.
 
 The checks below are the paper's instrument. Each one is bound to a sentence in a
 published specification (see docs/spec-mapping.md) and carries the *normative strength*
@@ -11,12 +11,12 @@ is feedback to the standards body rather than to the deployment.
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class CheckId(str, Enum):
+class CheckId(StrEnum):
     """The measurement instrument.
 
     C01-C04 concern the signed-document modality (A2A Agent Cards, did:web).
@@ -31,19 +31,35 @@ class CheckId(str, Enum):
     KEY_RESOLVABLE = "C03"                # jku / kid / did:web resolves to a usable key
     SIGNATURE_VERIFIES = "C04"            # the signature actually verifies (RFC 7515 + 8785)
     PRM_PRESENT = "C05"                   # RFC 9728 protected-resource metadata reachable
-    AS_METADATA_VALID = "C06"             # RFC 8414 authorization-server metadata valid
+    # C06 and C10 were removed on 2026-07-28. Both were defined, documented, and never
+    # emitted by any code path, and a paper that lists a check it does not run claims a
+    # measurement it did not make -- the cheapest possible way to lose a reviewer.
+    # C06 (AS metadata valid) was also redundant: C13 already fetches and parses the
+    # authorization-server document, so an unparseable one already fails there.
+    # C10 (key chains to an organisational trust root) had no specification to anchor to;
+    # defining one would have been the authors' rubric, which is the objection that killed
+    # three earlier framings of this project.
     WWW_AUTH_RESOURCE_METADATA = "C07"    # 401 carries WWW-Authenticate: resource_metadata
     SENDER_CONSTRAINED = "C08"            # DPoP / mTLS declared  (descriptive only)
     REVOCATION_DECLARED = "C09"           # revocation_endpoint declared  (descriptive only)
-    TRUST_ANCHORED = "C10"                # key origin chains to a public CA root
     TLS_VALID = "C11"                     # endpoint TLS itself is valid (BCP 195)
     PRM_RESOURCE_IDENTITY_MATCH = "C12"   # PRM `resource` == canonical resource identifier
     AS_CORRESPONDENCE = "C13"             # declared issuer actually returns that issuer
     PKCE_DECLARED = "C14"                 # code_challenge_methods_supported present
     KEY_STRENGTH = "C15"                  # alg / key size / kid resolvable
 
+    # C16-C18 read fields already present in the authorization-server metadata document
+    # that C13 fetches, so they cost no additional request. All three are descriptive:
+    # each rests on a MUST that binds somebody we cannot observe (the client) or on an
+    # OPTIONAL parameter, so R1 forbids them from reporting a failure. They exist because
+    # each is a candidate headline whose value cannot be guessed in advance, and declaring
+    # them before collection is what keeps the choice between them from being post-hoc.
+    ISS_PARAMETER_DECLARED = "C16"        # RFC 9207 mix-up defence advertised by the issuer
+    CLIENT_BOOTSTRAP_DECLARED = "C17"     # CIMD or RFC 7591 registration available
+    PROTECTED_RESOURCES_DECLARED = "C18"  # RFC 9728 Â§4 list, i.e. Â§7.6 cross-check possible
 
-class NormativeStrength(str, Enum):
+
+class NormativeStrength(StrEnum):
     """How hard the specification pushes. Enforced by decision rule R1: only a MUST
     may produce a FAIL_* outcome."""
 
@@ -53,7 +69,7 @@ class NormativeStrength(str, Enum):
     SILENT = "silent"     # the spec does not address this at all
 
 
-class Outcome(str, Enum):
+class Outcome(StrEnum):
     PASS = "pass"
     FAIL_UNIMPLEMENTED = "fail_unimplemented"      # the field/mechanism is absent
     FAIL_MISIMPLEMENTED = "fail_misimplemented"    # present but violates a MUST
@@ -79,7 +95,17 @@ DESCRIPTIVE_ONLY: frozenset[CheckId] = frozenset(
         CheckId.CARD_SIGNED,          # A2A: `signatures` is OPTIONAL for the publisher
         CheckId.SENDER_CONSTRAINED,   # neither MCP nor RFC 9449 mandates DPoP/mTLS
         CheckId.REVOCATION_DECLARED,  # no spec requires an agent identity to be revocable
-        CheckId.TRUST_ANCHORED,       # "organisational trust root" is not spec-defined
+        # RFC 9700 (BCP 240) 2.1 makes a mix-up defence REQUIRED, but of the *client*, and
+        # a passive probe cannot observe clients. What is observable is whether the issuer
+        # makes the defence available at all. Recording the absence as the issuer's failure
+        # would be scoring one party for another's obligation.
+        CheckId.ISS_PARAMETER_DECLARED,
+        # MCP lists four registration paths and permits ending at "prompt the user"; none
+        # of them is mandatory for an authorization server.
+        CheckId.CLIENT_BOOTSTRAP_DECLARED,
+        # RFC 9728 4: `protected_resources` is OPTIONAL, and 7.6 puts the selection problem
+        # it addresses explicitly out of scope.
+        CheckId.PROTECTED_RESOURCES_DECLARED,
     }
 )
 
@@ -92,20 +118,20 @@ def resolve_precedence(outcomes: list[Outcome]) -> Outcome:
     return Outcome.ERROR
 
 
-class EndpointKind(str, Enum):
+class EndpointKind(StrEnum):
     A2A_AGENT_CARD = "a2a_agent_card"
     MCP_REMOTE = "mcp_remote"
     DID_WEB = "did_web"
 
 
-class Modality(str, Enum):
+class Modality(StrEnum):
     """Which funnel an endpoint is scored in."""
 
     SIGNED_DOCUMENT = "signed_document"   # A2A card / did:web
     OAUTH_METADATA = "oauth_metadata"     # MCP authorization
 
 
-class Hosting(str, Enum):
+class Hosting(StrEnum):
     HOSTED_PLATFORM = "hosted_platform"
     SELF_HOSTED = "self_hosted"
     UNKNOWN = "unknown"
@@ -129,6 +155,15 @@ class Endpoint(BaseModel):
     apex_domain: str | None = Field(
         default=None, description="eTLD+1; required for key-reuse and same-org analysis"
     )
+    publisher_namespace: str | None = Field(
+        default=None,
+        description="reverse-DNS namespace the registry itself verified, e.g. io.github.x; "
+                    "an externally supplied clustering arm under R10.2b",
+    )
+    # Sensitivity arms that are declared but not yet collected. R10.2 forbids an
+    # uncollected arm from feeding any decision rule, precisely so that the mistake which
+    # invalidated the first go/no-go criterion -- resting it on a quantity nothing
+    # measures -- cannot repeat.
     asn: str | None = None
     country: str | None = None
     hosting: Hosting = Hosting.UNKNOWN
@@ -190,8 +225,17 @@ class EndpointReport(BaseModel):
     elapsed_ms: float | None = None
     server_header: str | None = None
     robots_allowed: bool = True
+    # The operator asked not to be measured. Kept in the corpus so the exclusion is
+    # auditable, removed from every denominator, and counted in the paper (ETHICS.md 7).
+    opted_out: bool = False
     raw_artifact_path: str | None = None
     checks: list[CheckResult] = Field(default_factory=list)
+    # The structured observations behind the verdicts: the declared resource, every
+    # declared issuer and its metadata, and how each comparison missed. A CheckResult
+    # records what was decided; this records what it was decided from. Without it the
+    # resource -> issuer graph -- the study's headline figure -- could only be rebuilt by
+    # scanning several thousand third-party hosts a second time.
+    evidence: dict = Field(default_factory=dict)
     probed_at: datetime
     run_id: str
 

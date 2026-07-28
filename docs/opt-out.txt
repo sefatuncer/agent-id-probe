@@ -1,0 +1,18 @@
+# Operators who asked not to be measured.
+#
+# docs/ETHICS.md §7: removal is granted on request, no justification asked, and this list
+# lives in the public repository so the exclusion is auditable rather than promised.
+#
+# One host or registrable domain per line. A domain also excludes its subdomains, because
+# a request to opt out is about an operator and not about one hostname. Matching happens in
+# the fetcher itself, before robots.txt is read, so no call path can route around it.
+# Excluded endpoints leave every denominator and their count is reported in the paper.
+#
+# To be removed from this study, write to the address in the User-Agent of the request you
+# received, or open an issue on the repository it links to. One line is enough.
+#
+# Format:
+#   example.com          # excludes example.com and *.example.com
+#   mcp.example.org      # excludes that host only
+#
+# (No entries yet.)

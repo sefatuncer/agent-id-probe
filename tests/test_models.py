@@ -59,7 +59,26 @@ def test_version_present():
 
 
 def test_check_set_is_complete():
-    assert len(list(CheckId)) == 15
+    """C16-C18 added and C06/C10 removed on 2026-07-28, before collection. This assertion
+    exists so the instrument can neither grow nor shrink silently once data exists."""
+    assert len(list(CheckId)) == 16
+    assert not hasattr(CheckId, "AS_METADATA_VALID")   # C06: redundant with C13
+    assert not hasattr(CheckId, "TRUST_ANCHORED")      # C10: no specification to anchor to
+
+
+def test_every_declared_check_is_actually_emitted_somewhere():
+    """A check that exists in the enum and in the specification map but in no code path
+    lets the paper claim a measurement it never made. Five checks were in that state until
+    2026-07-28; two were deleted and three wired up. This test is what stops the state
+    from coming back."""
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parents[1] / "src" / "agentidprobe"
+    emitted = "".join(
+        (src / name).read_text(encoding="utf-8")
+        for name in ("checks_oauth.py", "checks_signed.py")
+    )
+    for check in CheckId:
+        assert f"CheckId.{check.name}" in emitted, f"{check.value} is declared but never emitted"
 
 
 # --- R1: only a MUST may fail -------------------------------------------------
@@ -108,8 +127,23 @@ def test_descriptive_only_set_matches_intent():
         CheckId.CARD_SIGNED,
         CheckId.SENDER_CONSTRAINED,
         CheckId.REVOCATION_DECLARED,
-        CheckId.TRUST_ANCHORED,
+        CheckId.ISS_PARAMETER_DECLARED,
+        CheckId.CLIENT_BOOTSTRAP_DECLARED,
+        CheckId.PROTECTED_RESOURCES_DECLARED,
     }
+
+
+def test_c16_cannot_charge_the_issuer_for_the_clients_obligation():
+    """RFC 9700 §2.1 makes a mix-up defence REQUIRED, but of the *client*. A passive probe
+    sees issuers, not clients, so recording the missing flag as the issuer's failure would
+    score one party for another party's obligation. R1 makes that impossible."""
+    with pytest.raises(ValidationError):
+        CheckResult(
+            check_id=CheckId.ISS_PARAMETER_DECLARED,
+            outcome=Outcome.FAIL_UNIMPLEMENTED,
+            normative_strength=NormativeStrength.MUST,
+            spec_ref="RFC 9207 3",
+        )
 
 
 # --- R2: outcome precedence ---------------------------------------------------

@@ -35,7 +35,7 @@ from agentidprobe.models import (
     Outcome,
     RunContext,
 )
-from agentidprobe.runner import derive_card_endpoints, origin_of, summarise
+from agentidprobe.runner import Runner, derive_card_endpoints, origin_of, summarise
 from agentidprobe.store import RunStore
 
 FAST = MeasurementConfig(
@@ -72,6 +72,18 @@ def test_platform_hosts_are_distinguished_from_self_hosted():
 # --- registry collection ------------------------------------------------------
 
 
+def test_publisher_namespace_comes_from_the_registry_not_from_us():
+    """R10.2b needs clustering arms, and this one is externally supplied: the registry
+    verifies namespace ownership (DNS TXT, or OAuth for io.github.*) before accepting a
+    publication. A clustering built from a list we wrote ourselves would be the
+    author-supplied rubric the instrument exists to avoid. It was being discarded."""
+    from agentidprobe.collectors import publisher_namespace
+    assert publisher_namespace({"name": "io.github.someone/my-server"}) == "io.github.someone"
+    assert publisher_namespace({"server": {"name": "com.acme/thing"}}) == "com.acme"
+    assert publisher_namespace({"name": "no-slash"}) is None
+    assert publisher_namespace({}) is None
+
+
 @respx.mock
 async def test_official_registry_paginates_and_dedupes():
     page1 = {
@@ -90,8 +102,9 @@ async def test_official_registry_paginates_and_dedupes():
         return_value=httpx.Response(404))
     # The cursor route is registered first: respx matches in order and a bare URL
     # pattern also matches query strings, so the unparameterised route would otherwise
-    # swallow page two.
-    respx.get("https://registry.modelcontextprotocol.io/v0/servers?cursor=c2").mock(
+    # swallow page two. `limit` is always sent — at the registry's default page size of
+    # 30 a full enumeration needs ~625 pages, which is how max_pages truncates silently.
+    respx.get("https://registry.modelcontextprotocol.io/v0/servers?limit=100&cursor=c2").mock(
         return_value=httpx.Response(200, json=page2))
     respx.get("https://registry.modelcontextprotocol.io/v0/servers").mock(
         return_value=httpx.Response(200, json=page1))
@@ -264,9 +277,135 @@ def test_summary_funnel_is_conditional_on_the_previous_stage():
     )
     out = summarise([*reports, blocked])
     funnel = out["modalities"]["oauth_metadata"]["funnel"]
-    assert funnel[0] == {"stage": "reachable", "n": 2, "of": 3}
+    assert funnel[0] == {
+        "stage": "reachable", "n": 2, "eligible": 3,
+        "excluded": {"not_applicable": 0, "error": 1},
+    }
     assert funnel[1]["n"] == 2  # both reachable endpoints passed C05
-    assert funnel[2]["of"] == 2  # next stage is measured against C05 passers only
+    assert funnel[2]["eligible"] == 2  # next stage is measured against C05 passers only
+
+
+def test_endpoints_that_never_required_authorization_leave_the_denominator():
+    """Authorization is OPTIONAL in MCP, so an open server scores NOT_APPLICABLE on every
+    OAuth check. Counting it in the denominator measures composition, not conformance —
+    on the pilot's shape that is the difference between a 36.7% headline (a replication of
+    prior work) and a 96.6% one (the finding this study argues)."""
+    required = [_report("https://a-example.org/mcp"), _report("https://b-example.org/mcp")]
+    open_server = EndpointReport(
+        endpoint=_endpoint("https://open-example.org/mcp"),
+        modality=Modality.OAUTH_METADATA,
+        reachable=True,
+        checks=[
+            CheckResult(
+                check_id=CheckId.PRM_PRESENT,
+                outcome=Outcome.NOT_APPLICABLE,
+                normative_strength=NormativeStrength.MUST,
+                detail="authorization is OPTIONAL in MCP and this endpoint did not require it",
+            )
+        ],
+        probed_at=datetime.now(UTC),
+        run_id="r1",
+    )
+    funnel = summarise([*required, open_server])["modalities"]["oauth_metadata"]["funnel"]
+    prm_stage = funnel[1]
+    assert prm_stage["n"] == 2
+    assert prm_stage["eligible"] == 2                      # not 3
+    assert prm_stage["excluded"]["not_applicable"] == 1
+
+
+def test_robots_excluded_endpoints_leave_the_study_entirely():
+    """Our own politeness policy must not be able to move the published rate."""
+    excluded = EndpointReport(
+        endpoint=_endpoint("https://noindex-example.org/mcp"),
+        modality=Modality.OAUTH_METADATA,
+        reachable=False,
+        robots_allowed=False,
+        checks=[],
+        probed_at=datetime.now(UTC),
+        run_id="r1",
+    )
+    out = summarise([_report("https://a-example.org/mcp"), excluded])
+    oauth = out["modalities"]["oauth_metadata"]
+    assert oauth["total"] == 2
+    assert oauth["in_scope"] == 1
+    assert oauth["excluded_robots"] == 1
+    assert oauth["funnel"][0]["eligible"] == 1
+
+
+# --- R8 foot 2: everything a verdict rests on must survive the run ------------
+
+
+@respx.mock
+async def test_every_document_a_check_consulted_is_persisted(tmp_path):
+    """Decision rule R8 promises any result can be re-scored without touching the network.
+    The endpoint response alone does not carry that promise: C12 rests on the
+    protected-resource metadata and C13 on each issuer's metadata, and those are fetched
+    inside the checks. Until the fetcher gained a capture hook they were read, scored, and
+    dropped — so the decisive verdicts had no stored inputs, and rebuilding the
+    resource -> issuer graph would have meant scanning thousands of hosts again."""
+    resource = "https://one-example.org/mcp"
+    prm_url = "https://one-example.org/.well-known/oauth-protected-resource/mcp"
+    issuer = "https://auth-example.org"
+    as_url = "https://auth-example.org/.well-known/oauth-authorization-server"
+
+    for host in ("https://one-example.org", "https://auth-example.org"):
+        respx.get(f"{host}/robots.txt").mock(return_value=httpx.Response(404))
+    respx.get(resource).mock(return_value=httpx.Response(401))
+    respx.get(prm_url).mock(return_value=httpx.Response(
+        200, json={"resource": resource, "authorization_servers": [issuer]}))
+    respx.get(as_url).mock(return_value=httpx.Response(
+        200, json={"issuer": issuer, "code_challenge_methods_supported": ["S256"]}))
+
+    store = RunStore(tmp_path, "r1")
+    runner = Runner(store, MeasurementConfig(
+        rate=RatePolicy(per_host_requests_per_second=1000.0, max_retries=0,
+                        backoff_base_s=0.0)))
+    reports = await runner.run([_endpoint(resource)], Modality.OAUTH_METADATA)
+
+    stored = {a["url"] for a in store.read_artifacts()}
+    assert resource in stored
+    assert prm_url in stored, "the protected-resource document behind C12 was not stored"
+    assert as_url in stored, "the issuer metadata behind C13 was not stored"
+
+    # And the structured observations survive too, so the issuer graph can be built
+    # from disk rather than from a second scan.
+    evidence = reports[0].evidence
+    assert evidence["declared_resource"] == resource
+    assert evidence["authorization_servers"] == [issuer]
+    assert evidence["as_documents"][issuer]["issuer"] == issuer
+    assert store.read_reports()[0].evidence["expected_resource"] == resource
+
+
+def test_a_torn_line_from_a_killed_run_does_not_swallow_the_next_record(tmp_path):
+    """A run killed mid-write leaves a line with no newline. Appending straight onto it
+    fused two records into one unparseable line, so the *next* endpoint was lost as well —
+    silently, because both the resume scan and the reader skip malformed lines.
+
+    The torn line is written before the store opens the file, which is the only way it can
+    actually arise: the writing process is dead. That is also why the check runs once per
+    file per process rather than before every record — re-opening the file read-only each
+    time cost 341 ms per record against 28 ms without, inside calls that block the event
+    loop, which is roughly two hours of a full run spent re-reading one byte.
+    """
+    store = RunStore(tmp_path, "r1")
+    store.reports_path.write_text(
+        '{"endpoint": {"endpoint_id": "torn", "url": "https://b-exam',
+        encoding="utf-8",
+    )
+    store.append_report(_report("https://a-example.org/mcp"))
+    store.append_report(_report("https://c-example.org/mcp"))
+
+    urls = {r.endpoint.url for r in store.read_reports()}
+    assert urls == {"https://a-example.org/mcp", "https://c-example.org/mcp"}
+
+
+def test_reports_are_deduplicated_so_a_re_probe_is_not_counted_twice(tmp_path):
+    """The file is append-only, so re-probing with --no-resume leaves two records for an
+    endpoint. Returning both would count it twice in every rate the paper publishes."""
+    store = RunStore(tmp_path, "r1")
+    store.append_report(_report("https://a-example.org/mcp"))
+    store.append_report(_report("https://a-example.org/mcp"))
+    assert len(store.read_reports()) == 1
 
 
 def test_blocked_endpoint_is_not_counted_as_reachable():

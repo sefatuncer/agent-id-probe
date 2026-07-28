@@ -22,7 +22,7 @@ import base64
 import json
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlunsplit
 
 from joserfc import jws
 from joserfc.jwk import KeySet
@@ -102,6 +102,20 @@ class SignedEvidence:
     algs: list[str] = field(default_factory=list)
     verified_count: int = 0
     canonicalization_note: str | None = None
+
+    def as_record(self) -> dict:
+        """A JSON-serialisable snapshot, so a verdict can be re-scored from stored
+        evidence rather than from the network."""
+        return {
+            "document": self.document,
+            "document_url": self.document_url,
+            "signatures": self.signatures,
+            "protected_headers": self.protected_headers,
+            "key_sources": list(self.key_sources),
+            "algs": list(self.algs),
+            "verified_count": self.verified_count,
+            "canonicalization_note": self.canonicalization_note,
+        }
 
 
 def _decode_protected(sig: dict) -> dict | None:

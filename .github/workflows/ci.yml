@@ -1,0 +1,125 @@
+name: ci
+
+# Every job below exists because something already went wrong once. None of them is here
+# for completeness, and none of them should be removed without recording which defect is
+# being allowed back in.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Read-only. This workflow builds and verifies; it never publishes, tags or comments, so
+# it has no reason to hold a write token.
+permissions:
+  contents: read
+
+# A push that supersedes an earlier one cancels it. The jobs are cheap but the repository
+# is a research artefact with a single maintainer; queueing stale runs only delays the
+# useful one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # The suite is fully mocked (respx) and must never touch the network; pyproject sets a
+    # 30s per-test timeout so an accidental live call fails fast instead of hanging here.
+    # The matrix is not decoration: the paper claims a reader can re-run this instrument,
+    # and "works on the author's Python 3.11" is not that claim. `ruff check` runs in the
+    # same job because a lint failure and a test failure are the same kind of news.
+    name: test (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: pytest -q
+
+  clean-install:
+    # This job exists because `tldextract` was missing from `pyproject.toml` until
+    # 2026-07-28. `collectors.py` imports it and `cli.py` imports `collectors`, so
+    # `pip install .` succeeded and `agent-id-probe --help` died with ModuleNotFoundError.
+    # It was invisible in the authors' venv, where the package had been installed by hand,
+    # and fatal for every other reader -- i.e. for everyone the artefact is published for.
+    # It was found by hand, in a container, weeks later. With this job in place it could
+    # not have shipped at all.
+    #
+    # Two properties are being tested, and both need the wheel rather than the checkout:
+    # that every import is a declared dependency, and that the console entry point works
+    # when the current directory is not the repository (a src-layout package that is only
+    # importable from the repo root passes the test suite and fails for the reader).
+    # Hence the build, the wheel install, and `working-directory: /tmp`.
+    name: clean install from wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip build
+      - run: python -m build
+      - name: Install the wheel, and nothing else
+        run: pip install dist/*.whl
+      - name: Exercise the CLI from outside the checkout
+        working-directory: /tmp
+        run: |
+          agent-id-probe --version
+          agent-id-probe --help
+          agent-id-probe collect --help
+          agent-id-probe probe --help
+          agent-id-probe rescore --help
+
+  replay:
+    # Decision rule R8: every verdict must be re-derivable from stored artefacts, offline
+    # and deterministically, so an instrument fix can be applied to an old run without
+    # contacting anybody again. That was a sentence in docs/decision-rules.md until this
+    # job; here it becomes a build step.
+    #
+    # `results/runs/example/` and `data/raw/example/` are committed and fully synthetic
+    # (RFC 2606 example.org hosts, built by scripts/make_example_run.py), so this runs with
+    # no network and no third party involved. `--verify` re-scores the stored artefacts and
+    # exits 1 if any verdict moved, which is what catches the dangerous kind of change: a
+    # scoring edit that silently rewrites the history of an already-published run.
+    name: replay determinism (R8)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e .
+      - run: agent-id-probe --root . rescore --run-id example --verify
+
+  catalogue:
+    # `docs/check-catalogue.md` is generated from `CheckId` and from the AST of the check
+    # modules. The hand-written version drifted: README.md listed C06 and C10 after both
+    # had been deleted from the enum, and omitted eight checks that were really running.
+    # A paper that names a check it does not run claims a measurement it did not make, and
+    # nothing about that failure is loud -- prose does not raise when the code under it
+    # changes. This job fails when the committed catalogue and the code disagree, in either
+    # direction: a check emitted but undocumented, or documented but no longer emitted.
+    name: catalogue matches code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e .
+      - run: python scripts/gen_catalogue.py --check

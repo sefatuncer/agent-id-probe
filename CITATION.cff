@@ -1,0 +1,49 @@
+# Citation metadata for the software artefact, in Citation File Format 1.2.0.
+# https://citation-file-format.github.io/
+#
+# TODO before release -- deliberately absent rather than guessed, because an invented
+# identifier resolves to somebody else's work:
+#   * ORCIDs for both authors (add `orcid: "https://orcid.org/0000-0000-0000-0000"`)
+#   * a DOI and `date-released:`, once the archived release exists
+#   * `preferred-citation:` for the paper, once it has a venue
+cff-version: 1.2.0
+message: "If you use this software or the data it produces, please cite it as below."
+title: >-
+  agent-id-probe: passive, spec-anchored measurement of identity and authorization
+  metadata in deployed AI agent endpoints
+abstract: >-
+  RFC 9728 section 7.6 places the secure determination of which authorization server
+  belongs to a protected resource explicitly outside the specification's scope, names the
+  resulting attack, and offers a single mitigation; the Model Context Protocol passes that
+  decision to the client unchanged. agent-id-probe measures the decision surface this
+  creates across deployed AI agent endpoints -- how many resources delegate to how many
+  issuers, and how much of that delegation a client can verify from what the ecosystem
+  publishes. Every check is bound to a normative sentence in a published specification
+  (RFC 9728, RFC 8414, RFC 7515, RFC 8785, MCP Authorization, A2A Agent Card), and a check
+  may report a failure only where it can cite a MUST -- a rule enforced in code rather than
+  promised in prose. The instrument is passive and read-only: GET requests to well-known
+  paths, no authentication, no writes, an enforced opt-out list, and all raw responses
+  stored so any verdict can be re-scored offline.
+type: software
+authors:
+  - family-names: Tuncer
+    given-names: Sefa
+    affiliation: "Muğla Sıtkı Koçman University"
+  - family-names: Karaarslan
+    given-names: Enis
+    affiliation: "Muğla Sıtkı Koçman University"
+repository-code: "https://github.com/sefatuncer/agent-id-probe"
+license: Apache-2.0
+# Mirrors [project].version in pyproject.toml. There is no tagged release yet, which is
+# why no `date-released` and no DOI appear above.
+version: "0.1.0"
+keywords:
+  - agent identity
+  - Model Context Protocol
+  - A2A Agent Card
+  - OAuth 2.0
+  - RFC 9728
+  - protected resource metadata
+  - did:web
+  - internet measurement
+  - specification conformance

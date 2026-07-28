@@ -8,39 +8,64 @@ version = "0.1.0"
 description = "Passive, spec-anchored measurement of identity and authorization metadata in deployed AI agent endpoints"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
     { name = "Sefa Tuncer" },
     { name = "Enis Karaarslan" },
 ]
 keywords = ["agent identity", "A2A", "MCP", "OAuth", "did:web", "verifiable credentials", "measurement"]
 
+# Upper bounds are deliberate. This package is a research artefact whose whole claim is
+# that someone else can re-run it and get the same numbers; open-ended lower bounds make
+# that claim expire silently on the next major release of anything. A clean container
+# resolved `pandas>=2.2` to 3.0.5 and `ruff>=0.5` to 0.16 (which flagged seven new
+# violations), which is the failure mode in miniature.
 dependencies = [
-    "httpx>=0.27",
-    "pydantic>=2.7",
-    "joserfc>=1.0",
-    "cryptography>=42.0",
-    "pyyaml>=6.0",
-    "pandas>=2.2",
-    "matplotlib>=3.9",
-    "tenacity>=8.3",
-    "protego>=0.3",
+    "httpx>=0.27,<1.0",
+    "pydantic>=2.7,<3.0",
+    "joserfc>=1.0,<2.0",
+    # Not imported directly: joserfc pulls it in, and signature verification is on the
+    # critical path, so the version is worth constraining rather than leaving to chance.
+    "cryptography>=42.0,<47.0",
+    "protego>=0.3,<1.0",
+    # Was missing entirely until 2026-07-28. `collectors.py` imports it and `cli.py`
+    # imports `collectors`, so `pip install .` succeeded and `--help` crashed. Invisible in
+    # the authors' venv, fatal for every other reader; found by installing into a clean
+    # container. pandas, matplotlib, tenacity and pyyaml were declared here and imported
+    # nowhere, and were removed in the same pass -- `analysis.py` is standard-library only
+    # on purpose.
+    "tldextract>=5.1,<6.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.2",
-    "pytest-asyncio>=0.23",
-    "pytest-timeout>=2.3",
-    "respx>=0.21",
-    "ruff>=0.5",
+    "pytest>=8.2,<10.0",
+    "pytest-asyncio>=0.23,<2.0",
+    "pytest-timeout>=2.3,<3.0",
+    "respx>=0.21,<1.0",
+    "ruff>=0.5,<0.17",
 ]
+
+[project.urls]
+Homepage = "https://github.com/sefatuncer/agent-id-probe"
+Repository = "https://github.com/sefatuncer/agent-id-probe"
+Issues = "https://github.com/sefatuncer/agent-id-probe/issues"
+Ethics = "https://github.com/sefatuncer/agent-id-probe/blob/main/docs/ETHICS.md"
 
 [project.scripts]
 agent-id-probe = "agentidprobe.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentidprobe"]
+
+# The opt-out list ships inside the wheel. Locating it only relative to the repository
+# meant a `pip install` of this package found nothing and silently ran with an empty
+# exclusion set -- the ethics gate of docs/ETHICS.md 7 disabled without a word. A packaged
+# copy is a floor, not a substitute: it is the list as of this release, and `load_opt_out`
+# still prefers AGENT_ID_PROBE_OPT_OUT and the working directory over it.
+[tool.hatch.build.targets.wheel.force-include]
+"docs/opt-out.txt" = "agentidprobe/opt-out.txt"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

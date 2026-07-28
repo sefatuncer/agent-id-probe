@@ -131,6 +131,23 @@ def _remote_urls_from_mcp_record(record: dict) -> list[str]:
     return urls
 
 
+def publisher_namespace(record: dict) -> str | None:
+    """The reverse-DNS namespace the registry itself verified, e.g. `io.github.someone`.
+
+    Decision rule R10.2b needs sensitivity arms for clustering, and this one is unusual in
+    being externally supplied: the registry verifies namespace ownership (DNS TXT for
+    domain namespaces, OAuth for `io.github.*`) before accepting a publication, so it is
+    ground truth we did not invent. That matters here specifically — a clustering built
+    from a list we wrote ourselves is the author-supplied rubric this instrument exists to
+    avoid. It was being read off every record and discarded.
+    """
+    name = record.get("name") or (record.get("server") or {}).get("name")
+    if not isinstance(name, str) or "/" not in name:
+        return None
+    namespace = name.split("/", 1)[0].strip().lower()
+    return namespace or None
+
+
 class RegistryCollector:
     """Base for the free registries. Subclasses supply pagination and record shape."""
 
@@ -178,6 +195,7 @@ class RegistryCollector:
                         kind=EndpointKind.MCP_REMOTE,
                         source=self.source_name,
                         apex_domain=apex,
+                        publisher_namespace=publisher_namespace(record),
                         hosting=classify_hosting(url),
                         registry_listed=True,
                         first_seen=now,
@@ -194,6 +212,11 @@ class McpOfficialRegistry(RegistryCollector):
 
     source_name = "mcp-official-registry"
 
+    # The registry defaults to 30 records per page and accepts up to 100; ?limit=500 is
+    # rejected with 422. At the default it takes ~625 pages to enumerate the corpus, which
+    # is how a max_pages set for a trial run silently truncates a full one.
+    page_size = 100
+
     async def _pages(self) -> AsyncIterator[dict]:
         cursor: str | None = None
         seen_cursors: set[str] = set()
@@ -206,7 +229,8 @@ class McpOfficialRegistry(RegistryCollector):
                     self.stats.errors.append(f"cursor repeated ({cursor}); stopping pagination")
                     return
                 seen_cursors.add(cursor)
-            url = MCP_REGISTRY + (f"?cursor={cursor}" if cursor else "")
+            query = f"limit={self.page_size}" + (f"&cursor={cursor}" if cursor else "")
+            url = f"{MCP_REGISTRY}?{query}"
             result = await self.fetcher.fetch(url)
             if result.status != 200 or not result.body:
                 self.stats.errors.append(f"{url} -> {result.status} {result.error_kind.value}")
@@ -221,6 +245,13 @@ class McpOfficialRegistry(RegistryCollector):
             cursor = metadata.get("next_cursor") or metadata.get("nextCursor")
             if not cursor:
                 return
+        # Falling out of the loop means the registry still had records. Saying so is the
+        # whole point: a truncated corpus that leaves no trace in the manifest looks
+        # exactly like a complete one.
+        self.stats.errors.append(
+            f"TRUNCATED: pagination stopped at max_pages={self.max_pages} with more "
+            f"records available (next cursor {cursor!r}). The corpus is incomplete."
+        )
 
     def _records(self, page: dict) -> Iterable[dict]:
         servers = page.get("servers")
@@ -254,12 +285,24 @@ class SmitheryRegistry(RegistryCollector):
         return [s for s in servers if isinstance(s, dict)] if isinstance(servers, list) else []
 
     def _urls(self, record: dict) -> list[str]:
-        urls = _remote_urls_from_mcp_record(record)
-        for key in ("deploymentUrl", "url", "homepage"):
-            value = record.get(key)
-            if isinstance(value, str) and value.startswith("https://"):
-                urls.append(value)
-        return urls
+        """Only fields that actually denote an MCP endpoint.
+
+        `homepage` and `url` were harvested here until 2026-07-28 and they are not
+        endpoints: on the `/servers` listing they hold the project's marketing or source
+        page. A live collection run showed the damage — 203 of 238 corpus entries came
+        from this collector and every one of them was a `homepage`, including
+        `https://github.com/` sixty-six times and bare origins with no path at all. Each
+        would have been probed for `/.well-known/oauth-protected-resource`, returned 404,
+        and been counted as C05 FAIL_UNIMPLEMENTED, corrupting both the numerator and the
+        denominator of the study's headline funnel.
+
+        The `/servers` listing does not carry a deployment URL at all (`remote` there is a
+        boolean, not a URL). Reaching the real endpoint needs a per-server detail request,
+        `GET /servers/{qualifiedName}` -> `connections[].deploymentUrl`, which this
+        collector does not make. Until it does, Smithery contributes nothing to the corpus
+        and is kept only as a frame-validity cross-check.
+        """
+        return _remote_urls_from_mcp_record(record)
 
 
 def merge_endpoints(*groups: list[Endpoint]) -> list[Endpoint]:

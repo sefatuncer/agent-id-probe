@@ -31,7 +31,8 @@ from .collectors import (
 from .config import DEFAULT_CONFIG, PROBE_VERSION
 from .fetcher import Fetcher
 from .models import Modality, RunContext
-from .runner import Runner, derive_card_endpoints, summarise
+from .replay import compare_reports
+from .runner import Runner, derive_card_endpoints, rescore, summarise
 from .store import RunStore
 
 
@@ -136,6 +137,61 @@ def _cmd_summarise(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _cmd_rescore(args: argparse.Namespace) -> int:
+    """Decision rule R8, leg 2, as a command a reviewer can run in one line.
+
+    Re-scores a stored run entirely from saved artefacts. `--verify` additionally asserts
+    that the verdicts are unchanged, which is what makes R8 a checkable property rather
+    than a promise in a document.
+    """
+    root = Path(args.root)
+    source = RunStore(root, args.run_id)
+    stored = source.read_reports()
+    if not stored:
+        print(f"no reports at {source.reports_path}", file=sys.stderr)
+        return 2
+    if not source.artifacts_path.exists():
+        print(f"no raw artefacts at {source.artifacts_path}; this run cannot be "
+              f"re-scored offline", file=sys.stderr)
+        return 2
+
+    destination = RunStore(root, args.into or f"{args.run_id}-rescored")
+    print(f"re-scoring {len(stored)} reports from stored artefacts "
+          f"(no network) into {destination.run_dir}")
+    rescored = await rescore(source, destination, DEFAULT_CONFIG)
+
+    destination.write_manifest(
+        RunContext(
+            run_id=destination.run_id,
+            vantage_point="offline-replay",
+            probe_git_commit=_git_commit(root),
+            started_at=datetime.now(UTC),
+        ),
+        extra={
+            "stage": "rescore",
+            "rescored_from": args.run_id,
+            "rescore_probe_version": PROBE_VERSION,
+            "reports_in": len(stored),
+            "reports_out": len(rescored),
+        },
+    )
+
+    if not args.verify:
+        print(f"\n{len(rescored)} reports written to {destination.reports_path}")
+        return 0
+
+    differences = compare_reports(stored, rescored)
+    if not differences:
+        print(f"\nR8 replay determinism: {len(rescored)} reports, verdicts identical.")
+        return 0
+    print(f"\nR8 replay determinism FAILED: {len(differences)} difference(s)", file=sys.stderr)
+    for line in differences[:50]:
+        print(f"  {line}", file=sys.stderr)
+    if len(differences) > 50:
+        print(f"  ... and {len(differences) - 50} more", file=sys.stderr)
+    return 1
+
+
 async def _cmd_dry_run(args: argparse.Namespace) -> int:
     """Probe a few URLs and print the verdicts. Nothing is written; this exists so the
     instrument can be sanity-checked against real hosts before a wide run."""
@@ -181,6 +237,16 @@ def build_parser() -> argparse.ArgumentParser:
     summary = sub.add_parser("summarise", help="print funnels from stored reports")
     summary.add_argument("--run-id", required=True)
     summary.set_defaults(func=_cmd_summarise)
+
+    rescore_cmd = sub.add_parser(
+        "rescore", help="re-score a stored run from saved artefacts, with no network")
+    rescore_cmd.add_argument("--run-id", required=True)
+    rescore_cmd.add_argument("--into", default=None,
+                             help="destination run id (default: <run-id>-rescored). The "
+                                  "source run is never overwritten")
+    rescore_cmd.add_argument("--verify", action="store_true",
+                             help="fail with exit 1 if any verdict changed (decision rule R8)")
+    rescore_cmd.set_defaults(func=lambda a: asyncio.run(_cmd_rescore(a)))
 
     dry = sub.add_parser("dry-run", help="probe a few URLs and print verdicts, no writes")
     dry.add_argument("urls", nargs="+")

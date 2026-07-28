@@ -1,10 +1,10 @@
-"""Polite HTTP fetching for a passive measurement study.
+﻿"""Polite HTTP fetching for a passive measurement study.
 
 Two things here are load-bearing for the paper rather than merely operational:
 
 1. **Block detection.** Decision rule R4 says an access block is never a finding. If a
    WAF answers instead of the origin, we learn nothing about whether the origin
-   implements a spec — and counting that as "unimplemented" would bias the result in
+   implements a spec â€” and counting that as "unimplemented" would bias the result in
    exactly the direction of the property being measured, because mature deployments are
    the ones sitting behind WAFs. So blocks are classified and returned as errors.
 
@@ -19,27 +19,29 @@ import asyncio
 import hashlib
 import ssl
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from urllib.parse import urlsplit
 
 import httpx
 from protego import Protego
 
-from .config import DEFAULT_CONFIG, MeasurementConfig
+from .config import DEFAULT_CONFIG, MeasurementConfig, is_opted_out
 from .models import TlsInfo
 
 
-class ErrorKind(str, Enum):
+class ErrorKind(StrEnum):
     NONE = "none"
     TIMEOUT = "timeout"
     DNS = "dns"
     TLS = "tls"
     CONNECTION = "connection"
-    BLOCKED = "blocked"          # WAF / bot challenge / 403 / 429 — R4: never a finding
+    BLOCKED = "blocked"          # WAF / bot challenge / 403 / 429 â€” R4: never a finding
     TOO_LARGE = "too_large"
     ROBOTS_DISALLOWED = "robots_disallowed"
+    OPTED_OUT = "opted_out"      # operator asked to be excluded; leaves every denominator
     OTHER = "other"
 
 
@@ -97,21 +99,41 @@ class FetchResult:
 def classify_block(status: int | None, headers: dict[str, str], body: bytes) -> bool:
     """R4: is this an access block rather than an answer from the origin?
 
-    403 and 429 are treated as blocks unconditionally. 503 counts only when it carries
-    a WAF fingerprint, since a plain 503 is an ordinary outage.
+    429 is a block unconditionally. 403 is *not*: the MCP authorization specification
+    lists `403 Forbidden â€” Invalid scopes or insufficient permissions` in its own error
+    table, so a 403 is frequently the MCP server answering a question we asked. Treating
+    every 403 as a WAF discarded those endpoints as ERROR, and made the
+    `status in (401, 403)` branch in checks_oauth unreachable â€” an authorization-requiring
+    population that the pilot counted (37.9% "401/403") but the code could never reproduce.
+
+    A 403 is therefore only a block when nothing indicates the origin answered. The
+    default when ambiguous stays "block", because R4's asymmetry is deliberate: scoring a
+    WAF page as a specification failure writes a violation against an operator we never
+    observed, while scoring a genuine 403 as a block only costs us one observation.
+
+    503 counts only when it carries a WAF fingerprint, since a plain 503 is an outage.
     """
     if status in (401, 402, 404, 410):
         return False  # these are genuine answers about the resource
-    if status in (403, 429):
+    if status == 429:
         return True
+    lowered = {k.lower(): (v or "").lower() for k, v in headers.items()}
+    if status == 403:
+        # Positive evidence that the origin, not an intermediary, produced this.
+        if "www-authenticate" in lowered:
+            return False                   # an OAuth challenge is an answer, not a block
+        content_type = lowered.get("content-type", "")
+        if "json" in content_type:
+            return False
     # Body fingerprints are only meaningful in an HTML interstitial. Applied to JSON
-    # they misfire on ordinary payloads — an API answering {"error": "Access denied"}
+    # they misfire on ordinary payloads â€” an API answering {"error": "Access denied"}
     # is the origin talking, not a WAF, and review found such endpoints were both
     # dropped from the denominator and charged against the host failure budget.
-    lowered = {k.lower(): (v or "").lower() for k, v in headers.items()}
     is_html = "text/html" in lowered.get("content-type", "")
     if is_html and body and any(m in body[:4096] for m in _BLOCK_BODY_MARKERS):
         return True
+    if status == 403:
+        return True                        # ambiguous 403: stay on the R4-safe side
     if status == 503:
         # A bare 503 is an outage. Requiring a body fingerprint rather than trusting a
         # `server: cloudflare` header matters: CDN use correlates with operational
@@ -183,8 +205,21 @@ def _extract_tls(response: httpx.Response) -> TlsInfo | None:
 class Fetcher:
     """Rate-limited, robots-aware, redirect-tracking HTTP client."""
 
-    def __init__(self, config: MeasurementConfig = DEFAULT_CONFIG) -> None:
+    def __init__(
+        self,
+        config: MeasurementConfig = DEFAULT_CONFIG,
+        on_fetch: Callable[[FetchResult], None] | None = None,
+    ) -> None:
         self.config = config
+        # Every response this fetcher produces is handed to `on_fetch` before it is
+        # returned. The checks fetch documents of their own â€” the protected-resource
+        # metadata and each declared issuer's metadata â€” and those are precisely the
+        # documents the decisive verdicts rest on. Persisting only what the caller
+        # remembers to pass along means the inputs to C12 and C13 are never written down,
+        # decision rule R8's replay guarantee cannot hold, and rebuilding the
+        # resource -> issuer graph would mean a second scan of several thousand
+        # third-party hosts. A capture hook here cannot be forgotten by a caller.
+        self.on_fetch = on_fetch
         self._throttle = _HostThrottle(1.0 / config.rate.per_host_requests_per_second)
         self._semaphore = asyncio.Semaphore(config.rate.global_concurrency)
         self._robots: dict[str, Protego | None] = {}
@@ -236,11 +271,32 @@ class Fetcher:
         return bool(robots.can_fetch(url, self.config.user_agent))
 
     async def fetch(self, url: str) -> FetchResult:
+        """Fetch one URL and hand the result to the capture hook before returning it.
+
+        Every path out of `_fetch` goes through here, so no document a check consulted
+        can escape persistence (see `on_fetch` in __init__).
+        """
+        result = await self._fetch(url)
+        if self.on_fetch is not None:
+            self.on_fetch(result)
+        return result
+
+    async def _fetch(self, url: str) -> FetchResult:
         """Fetch one URL, following redirects manually and recording the chain."""
         if self._client is None:
             raise RuntimeError("Fetcher must be used as an async context manager")
 
         host = urlsplit(url).netloc
+
+        # Checked before anything else, including robots and the failure budget: an
+        # operator who has asked not to be measured must not be contacted even to read
+        # their robots.txt. Enforcing this in the fetcher rather than at the corpus level
+        # means no call path -- collection, a declared jwks_uri, a WWW-Authenticate hint --
+        # can route around it.
+        if is_opted_out(url, self.config.opted_out):
+            return FetchResult(url=url, ok=False, error_kind=ErrorKind.OPTED_OUT,
+                               error_detail="operator opted out (docs/ETHICS.md 7)")
+
         if self._host_failures.get(host, 0) >= self.config.rate.host_failure_budget:
             return FetchResult(url=url, ok=False, error_kind=ErrorKind.BLOCKED,
                                error_detail="host failure budget exhausted")
@@ -325,6 +381,16 @@ class Fetcher:
                 else:
                     last_kind = ErrorKind.CONNECTION
                 last_error = str(exc)
+            except (ValueError, httpx.InvalidURL) as exc:
+                # A malformed issuer in someone else's metadata yields a relative or
+                # otherwise unusable URL, and httpx raises ValueError, which is not an
+                # httpx.HTTPError. Uncaught it escaped probe_oauth entirely, the runner's
+                # blanket handler dropped the endpoint, and because no report was written
+                # the resume scan retried and re-dropped it on every run. A bad document
+                # on a third-party host must cost that host one verdict, not our record
+                # of the endpoint.
+                last_kind, last_error = ErrorKind.OTHER, f"unusable URL: {exc}"
+                break                        # deterministic: retrying cannot help
             except httpx.HTTPError as exc:
                 last_kind, last_error = ErrorKind.OTHER, str(exc)
             else:

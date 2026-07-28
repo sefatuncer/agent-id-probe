@@ -17,12 +17,96 @@ FAST = MeasurementConfig(
 )
 
 
+# --- opt-out (ETHICS.md 7) ----------------------------------------------------
+
+
+def test_opt_out_file_is_found_by_explicit_root_and_by_env_var(tmp_path, monkeypatch):
+    """Resolving the list only relative to this module found the repository from a
+    checkout and found nothing from an installed wheel — where it returned an empty set
+    silently, disabling the ethics gate for anyone who ran `pip install`. Two states that
+    must never look alike: "nobody opted out" and "the list is missing"."""
+    from agentidprobe.config import load_opt_out
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "opt-out.txt").write_text(
+        "# a comment\n\nexample.com\n  MCP.Example.ORG.  # trailing dot and case\n",
+        encoding="utf-8",
+    )
+    assert load_opt_out(tmp_path) == frozenset({"example.com", "mcp.example.org"})
+
+    monkeypatch.setenv("AGENT_ID_PROBE_OPT_OUT", str(docs / "opt-out.txt"))
+    assert "example.com" in load_opt_out()
+
+
+def test_opt_out_covers_subdomains_because_it_is_about_an_operator():
+    from agentidprobe.config import is_opted_out
+    opted = frozenset({"example.com", "mcp.other.org"})
+    assert is_opted_out("https://example.com/mcp", opted) is True
+    assert is_opted_out("https://deep.sub.example.com/mcp", opted) is True
+    assert is_opted_out("https://mcp.other.org/x", opted) is True
+    assert is_opted_out("https://other.org/x", opted) is False       # host-level entry
+    assert is_opted_out("https://notexample.com/x", opted) is False  # suffix, not a label
+    assert is_opted_out("https://anything.test/x", frozenset()) is False
+
+
+@respx.mock
+async def test_opted_out_host_is_not_contacted_at_all_not_even_robots():
+    """The gate lives in the fetcher rather than in corpus filtering, so that no call path
+    -- a declared jwks_uri, a WWW-Authenticate hint, a redirect -- can route around it. If
+    any request were made, respx would raise on the unmocked route."""
+    from agentidprobe.config import MeasurementConfig
+    config = MeasurementConfig(
+        rate=RatePolicy(per_host_requests_per_second=1000.0, max_retries=0),
+        opted_out=frozenset({"example.com"}),
+    )
+    async with Fetcher(config) as f:
+        result = await f.fetch("https://mcp.example.com/.well-known/oauth-protected-resource")
+    assert result.error_kind is ErrorKind.OPTED_OUT
+    assert result.status is None
+
+
 # --- block classification (R4) ------------------------------------------------
 
 
-def test_403_and_429_are_blocks():
-    assert classify_block(403, {}, b"") is True
+def test_429_is_always_a_block():
     assert classify_block(429, {}, b"") is True
+
+
+def test_mcp_403_with_an_oauth_challenge_is_an_answer_not_a_block():
+    """Amended 2026-07-28. The MCP authorization spec lists `403 Forbidden — Invalid scopes
+    or insufficient permissions` in its own error table, so a 403 is frequently the MCP
+    server answering. Classifying every 403 as a WAF discarded those endpoints as ERROR and
+    left the `status in (401, 403)` branch in checks_oauth unreachable — the
+    authorization-requiring population the pilot reported as "37.9% (401/403)" could not be
+    reproduced by the code meant to measure it."""
+    assert classify_block(
+        403,
+        {"WWW-Authenticate": 'Bearer error="insufficient_scope", scope="files:read"',
+         "Content-Type": "application/json"},
+        b'{"error":"insufficient_scope"}',
+    ) is False
+
+
+def test_json_403_is_an_answer_not_a_block():
+    assert classify_block(
+        403, {"Content-Type": "application/json"}, b'{"error":"forbidden"}'
+    ) is False
+
+
+def test_waf_403_interstitial_is_still_a_block():
+    assert classify_block(
+        403,
+        {"Content-Type": "text/html", "Server": "cloudflare"},
+        b"<html><title>403 Forbidden</title>Attention Required!</html>",
+    ) is True
+
+
+def test_ambiguous_403_stays_a_block():
+    """R4 is deliberately asymmetric: scoring a WAF page as a specification failure writes
+    a violation against an operator we never observed, while scoring a genuine 403 as a
+    block costs one observation. With no positive evidence the origin answered, stay safe."""
+    assert classify_block(403, {"Content-Type": "text/html"}, b"<html>Forbidden</html>") is True
+    assert classify_block(403, {}, b"") is True
 
 
 def test_401_and_404_are_genuine_answers_not_blocks():

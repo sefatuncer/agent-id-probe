@@ -1,0 +1,42 @@
+Measurement data licence — Creative Commons Attribution 4.0 International
+=========================================================================
+
+Copyright 2026 Sefa Tuncer and Enis Karaarslan
+Muğla Sıtkı Koçman University
+
+This licence covers the **data** produced and published by this study, not the source
+code. The source code is licensed separately under Apache-2.0; see LICENSE.
+
+Specifically, CC BY 4.0 applies to:
+
+  * the endpoint corpus (`results/runs/<id>/corpus.jsonl`)
+  * aggregate result tables and figures published with the paper
+  * the machine-readable schemas under `docs/schema/`
+  * any dataset deposited under this project's Zenodo record
+
+Full legal text:  https://creativecommons.org/licenses/by/4.0/legalcode
+Human summary:    https://creativecommons.org/licenses/by/4.0/
+
+You are free to share and adapt this material for any purpose, including commercially,
+provided you give appropriate credit, link to the licence, and indicate if changes were
+made.
+
+Suggested attribution:
+
+    Tuncer, S. and Karaarslan, E. (2026). agent-id-probe measurement dataset.
+    Muğla Sıtkı Koçman University. CC BY 4.0.
+
+A note on what is *not* published
+---------------------------------
+
+The corpus lists endpoint URLs that were already public in the Model Context Protocol
+registry, so publishing them adds no exposure. Per-endpoint verdicts are released only
+after the disclosure window described in `docs/ETHICS.md` §9 has closed, and no endpoint is
+named as an example of a failure without its operator having been notified first.
+
+Personal data encountered incidentally in fetched documents (contact addresses, provider
+names in agent cards or authorization-server metadata) is masked before publication. It was
+never sought; see `docs/ETHICS.md` §8.
+
+Hosts that asked to be excluded are in `docs/opt-out.txt`. They are absent from the corpus
+and from every denominator.

@@ -28,8 +28,8 @@ Diğer ücretsiz kaynaklar (anahtarsız çalıştı): Smithery `registry.smither
 
 Üç bağımsız kanıt, kamusal A2A dağıtımının yok denecek kadar az olduğunu gösteriyor:
 - Kendi taraması: 43 yüksek-olasılıklı kurumsal host (Google, Salesforce, Atlassian, SAP, Okta) → **2 kart**, ikisi de imzasız
-- OpenClaw Deney 055 (Nis 2026): A2A desteği *ilan eden* 50 ajan → geçerli kart **0–2**, A2A task isteğine yanıt **0**
-- AgentHermes: 27 sektörde 500 işletme → **sıfır** `agent-card.json`
+- OpenClaw Deney 055 (Nis 2026): A2A desteği *ilan eden* 50 ajan → geçerli kart **0–2**, A2A task isteğine yanıt **0** — doğrulandı: `a2aproject/A2A` issue #1755, *"Active A2A Outbound Probing"*
+- ~~AgentHermes: 27 sektörde 500 işletme → sıfır `agent-card.json`~~ — **28 Tem 2026'da kaldırıldı: kaynak bulunamadı.** "500 işletme / sıfır kart" istatistiğini destekleyen bir yayın veya veri seti teyit edilemedi. Sonuç zaten yukarıdaki iki bağımsız kanıtla ayakta; doğrulanamayan üçüncü bir dayanak, doğrulanabilir olanları da şüpheli hale getirir
 
 **Kurtarma:** MCP remote origin'lerini `/.well-known/agent-card.json` için yoklayınca 472 erişilebilir origin'de **25 geçerli kart (%5,3)** çıktı → 5.154 alana ölçeklenirse ~270. Eşiğin altında ama sıfır değil. **A2A ancak MCP korpusundan türetilerek var olabilir** — bu türetme yönteminin kendisi özgün bir metodolojik katkı. Bulunan kartlar uzun-kuyruk projeler (namewhisper.ai, brainonbnb.com), kurumsal değil → genelleme iddiası buna göre kısılmalı.
 
@@ -57,9 +57,28 @@ Diğer ücretsiz kaynaklar (anahtarsız çalıştı): Smithery `registry.smither
 |---|---|---|
 | arXiv **2605.22333** | 7.973 canlı remote MCP sunucusu, **%40,55 auth yok**, OAuth kusur taksonomisi, 9 CVE | Huninin 1.–2. aşaması **zaten yayımlanmış**. Bizim %37,9'umuz aynı ölçümün diğer yüzü |
 | arXiv **2607.11086** (MCPZoo) | 64.611 sunucu, ekosistem ölçeği | Ölçek üstünlüğü iddiası imkânsız |
-| arXiv **2603.07473** | *"Caller Identity Confusion in MCP"* — doğrudan kimlik, ölçekli | "Prior work yok" iddiasını tek başına çürütür |
+| arXiv **2603.07473** | *"Give Them an Inch…: Caller Identity Confusion in MCP-Based AI Systems"* | **⚠️ 21 Tem 2026'da yazarlarınca GERİ ÇEKİLDİ.** Prior art olarak sayılamaz — aşağı bak |
 
 ---
+
+**⚠️ Düzeltme (28 Tem 2026): 2603.07473 geri çekildi.** v2, 21 Temmuz 2026'da yazarlarınca
+geri çekildi. Birebir gerekçe:
+
+> *"Withdrawal due to some flaws in experimental methodology and unresolved ethical issues in
+> data collection. We need to redesign the experiments and obtain proper ethical clearance
+> before resubmission."*
+
+İki sonucu var:
+
+1. **Prior art olarak sayılamaz.** Bu tablo onu *"'prior work yok' iddiasını tek başına
+   çürütür"* diye listeliyordu. Geri çekilmiş bir makale bunu yapamaz. Konumlandırma
+   yeniden yazılmalı: kimlik karışıklığı üzerine *yayımlanmış ve ayakta duran* iş şu an
+   düşündüğümüzden az. Yine de makalede **geri çekilme notuyla birlikte** anılmalı —
+   sessizce düşürmek, aynı alanı çalışan hakemin gözünden kaçmaz.
+2. **Bizim etik bölümümüz için canlı bir uyarı.** Geri çekilme gerekçesi tam olarak bizim
+   maruz kaldığımız risk: veri toplamada çözülmemiş etik sorunlar. Aynı alanda, aynı yıl,
+   aynı yöntem ailesinde bir makale bu sebeple geri çekildi. `docs/ETHICS.md` bu yüzden
+   koşumun ön koşuludur, koşum sonrası bir yazım işi değil.
 
 ## 4. KARAR: Devam — ama yeniden çerçevelemeyle
 
@@ -123,9 +142,51 @@ Pilotta 28/500 (%5,6) hiç yanıt vermedi; PulseMCP 403/410 döndürdü. **Blokl
 
 ## 8. Sıradaki belirleyici test (go/no-go)
 
-`authorization_servers` ilan eden ~166 uçta **issuer ↔ resource ↔ audience üçlü tutarlılığını** ölç.
+### ⚠️ Eski kriter geçersiz — 28 Tem 2026'da değiştirildi, sessizce değil
 
-- Varyans **%2–%90 arası** → makale var, tam koşuya geç
-- **%0'a veya %100'e yapışık** → projeyi durdur
+Eski hâli şuydu: *"`authorization_servers` ilan eden ~166 uçta issuer ↔ resource ↔ audience
+üçlü tutarlılığını ölç. Varyans %2–%90 arası → devam; %0 veya %100'e yapışık → durdur."*
+Üç ayrı sebeple kullanılamaz:
 
-Bu, düzeltilmiş aletle (C11–C15 dahil, iki huni, karar kuralları yazılı) koşulacak.
+1. **`audience` ölçülmüyor.** `spec-mapping.md`, token audience doğrulamasının pasif olarak
+   gözlenemeyeceğini açıkça yazıyor. Dondurulmuş bir kriter, var olmayan bir ölçümü referans
+   alıyordu.
+2. **Nokta tahmini eşikle karşılaştırılıyordu, belirsizlik payı yok.** n=166'da k=3 → p̂=%1,8
+   → "eşiğin altında, dur". Oysa %95 GA [%0,6, %5,2] ve %5'i içeriyor. Hesaplandı: gerçek
+   ihlal oranı %1 ise bu kural projeyi **%19 olasılıkla yanlışlıkla öldürür**; %0,5 ise
+   **%43,5**. Tam korpusta %1 oran ~17 uç demektir — makale için fazlasıyla yeterli.
+3. **Yanlış kola bakıyordu.** Mevcut çerçeve ihlal oranına değil, **delegasyon dağılımına**
+   dayanıyor. C12/C13 %99 PASS dönse bile "N kaynak M issuer'a delege ediyor, %X
+   çapraz-işletmeci, top-1 issuer korpusun %Y'sini taşıyor" bulgusu ayakta kalır.
+
+**Ayrıca kayda geçirilmesi gereken bir şey daha var.** `ARASTIRMA-PLANI.md` §5'in öldürme
+testi *"100 uçta imzalı/doğrulanabilir oran %2–%90 arasında… her yerde %0 ise → ÖLDÜR"*
+diyordu ve *"pazarlık konusu değildir"* notu taşıyordu. Pilot **%0,2** verdi — eşiğin
+**altında**. Proje öldürülmedi; karar verici ölçüm imzalı-doküman kolundan OAuth koluna
+kaydırıldı. Bu pivot savunulabilir — imza hunisi öldü, OAuth hunisi bakir — ama **kriterin
+düştüğü hiçbir yere yazılmamıştı.** Projenin tüm kimliği R1–R8 ile post-hoc'u imkânsız
+kılmak üzerine kurulu; kriter düşünce sessizce hedef değiştirmek tam da o savunmanın
+yasakladığı hamledir. Kayıt buraya, olduğu gibi geçirilmiştir. Makalede de aynen anlatılır:
+**imza modalitesi önceden ilan edilmiş eşiğinde düştü ve bu yüzden betimsel bir sonuca
+indirildi; ölçüm ağırlığı OAuth modalitesine taşındı.**
+
+### Yeni kriter (28 Tem 2026'da, veriden önce donduruldu)
+
+Ara go/no-go kapısı **kaldırılmıştır.** Gerekçesi yukarıdaki (2): n=166'lık bir ara kararın
+tek etkisi yanlış öldürme riski üretmek. Dar kesit koşusu **etik ve operasyonel** doğrulama
+içindir (blok oranı, host hata bütçesi, oran politikası, UA erişilebilirliği) — istatistiksel
+karar için değil.
+
+Tam korpus (~1.700 `authorization_servers` ilan eden uç beklenir) koşulur ve **durdurma
+kararı yalnızca şu koşulda verilir:**
+
+> Çapraz-işletmeci delegasyon oranının **küme-robust %95 güven aralığının tamamı** [0, %2]
+> aralığında kalırsa → makale bir ölçüm notuna iner, dergi hedefi düşürülür.
+
+Nokta tahmini değil, aralık. Naif Wilson değil, küme-robust (R10.4) — çünkü kümelenme altında
+naif aralığın gerçek kapsaması %95 değil, senaryoya göre %45–%82'dir.
+
+**Ölçümün kendisi C12/C13 ihlal oranına indirgenemez.** Manşet nicelikler:
+issuer yoğunlaşması (HHI, top-k payı) · çapraz-işletmeci delegasyon oranı (üç önceden ilan
+edilmiş vekil altında: apex, ASN, sertifika) · tenant ayrımı olmayan çok-kiracılı issuer ·
+RFC 9728 §7.6 çapraz-kontrolünün fiilen mümkün olduğu AS oranı.
