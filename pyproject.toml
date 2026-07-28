@@ -31,6 +31,7 @@ dependencies = [
 dev = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
+    "pytest-timeout>=2.3",
     "respx>=0.21",
     "ruff>=0.5",
 ]
@@ -44,6 +45,9 @@ packages = ["src/agentidprobe"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# The suite is fully mocked and must never touch the network. A per-test cap turns an
+# accidental live call into a fast failure instead of a stalled run.
+addopts = "--timeout=30 --timeout-method=thread"
 
 [tool.ruff]
 line-length = 100
