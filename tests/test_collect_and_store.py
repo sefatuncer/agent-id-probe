@@ -1,0 +1,276 @@
+﻿"""Collection, persistence and resume.
+
+The property that matters most here is that a run can be interrupted and resumed
+without re-fetching hosts we have already bothered, and that raw documents survive so a
+verdict can be recomputed after an instrument fix. The phase-0 pilot lacked exactly this
+and became unusable as evidence when review found scoring defects.
+"""
+
+import base64
+import json
+from datetime import UTC, datetime
+
+import httpx
+import respx
+
+from agentidprobe.collectors import (
+    McpOfficialRegistry,
+    apex_domain,
+    capture_recapture_estimate,
+    classify_hosting,
+    endpoint_id,
+    merge_endpoints,
+)
+from agentidprobe.config import MeasurementConfig, RatePolicy
+from agentidprobe.fetcher import ErrorKind, Fetcher, FetchResult
+from agentidprobe.models import (
+    CheckId,
+    CheckResult,
+    Endpoint,
+    EndpointKind,
+    EndpointReport,
+    Hosting,
+    Modality,
+    NormativeStrength,
+    Outcome,
+    RunContext,
+)
+from agentidprobe.runner import derive_card_endpoints, origin_of, summarise
+from agentidprobe.store import RunStore
+
+FAST = MeasurementConfig(
+    rate=RatePolicy(per_host_requests_per_second=1000.0, max_retries=0, backoff_base_s=0.0)
+)
+
+
+def _endpoint(url: str, source: str = "s") -> Endpoint:
+    return Endpoint(endpoint_id=endpoint_id(url), url=url, kind=EndpointKind.MCP_REMOTE,
+                    source=source, apex_domain=apex_domain(url))
+
+
+# --- apex / hosting -----------------------------------------------------------
+
+
+def test_apex_handles_multi_label_suffixes():
+    assert apex_domain("https://a.b.example.co.uk/mcp") == "example.co.uk"
+    assert apex_domain("https://example.org/mcp") == "example.org"
+
+
+def test_apex_none_for_ip_and_junk():
+    assert apex_domain("https://192.0.2.1/mcp") is None
+    assert apex_domain("not-a-url") is None
+
+
+def test_platform_hosts_are_distinguished_from_self_hosted():
+    """The clustering analysis depends on this: a platform getting it wrong once looks
+    identical to a thousand operators each getting it wrong, unless they are labelled."""
+    assert classify_hosting("https://x.smithery.ai/mcp") is Hosting.HOSTED_PLATFORM
+    assert classify_hosting("https://my-agent.vercel.app/mcp") is Hosting.HOSTED_PLATFORM
+    assert classify_hosting("https://agents.acme-corp-example.org/mcp") is Hosting.SELF_HOSTED
+
+
+# --- registry collection ------------------------------------------------------
+
+
+@respx.mock
+async def test_official_registry_paginates_and_dedupes():
+    page1 = {
+        "servers": [
+            {"name": "a", "remotes": [{"url": "https://one-example.org/mcp"}]},
+            {"name": "b", "server": {"remotes": [{"url": "https://two-example.org/mcp"}]}},
+            {"name": "a-v2", "remotes": [{"url": "https://one-example.org/mcp"}]},  # duplicate
+        ],
+        "metadata": {"next_cursor": "c2"},
+    }
+    page2 = {
+        "servers": [{"name": "c", "remotes": [{"url": "http://insecure-example.org/mcp"}]}],
+        "metadata": {},
+    }
+    respx.get("https://registry.modelcontextprotocol.io/robots.txt").mock(
+        return_value=httpx.Response(404))
+    # The cursor route is registered first: respx matches in order and a bare URL
+    # pattern also matches query strings, so the unparameterised route would otherwise
+    # swallow page two.
+    respx.get("https://registry.modelcontextprotocol.io/v0/servers?cursor=c2").mock(
+        return_value=httpx.Response(200, json=page2))
+    respx.get("https://registry.modelcontextprotocol.io/v0/servers").mock(
+        return_value=httpx.Response(200, json=page1))
+
+    async with Fetcher(FAST) as fetcher:
+        collector = McpOfficialRegistry(fetcher)
+        endpoints = await collector.collect()
+
+    assert len(endpoints) == 2
+    assert collector.stats.pages_fetched == 2
+    assert collector.stats.records_seen == 4
+    assert collector.stats.dropped_not_https == 1
+    assert len(collector.stats.apex_domains) == 2
+
+
+@respx.mock
+async def test_repeated_cursor_stops_pagination():
+    """A registry echoing its cursor back would otherwise be paginated max_pages times,
+    re-counting the same records and inflating every derived statistic."""
+    page = {
+        "servers": [{"name": "a", "remotes": [{"url": "https://one-example.org/mcp"}]}],
+        "metadata": {"next_cursor": "same"},
+    }
+    respx.get("https://registry.modelcontextprotocol.io/robots.txt").mock(
+        return_value=httpx.Response(404))
+    respx.get(url__regex=r"https://registry\.modelcontextprotocol\.io/v0/servers.*").mock(
+        return_value=httpx.Response(200, json=page))
+
+    async with Fetcher(FAST) as fetcher:
+        collector = McpOfficialRegistry(fetcher, max_pages=500)
+        endpoints = await collector.collect()
+
+    assert len(endpoints) == 1
+    assert collector.stats.pages_fetched == 2
+    assert any("cursor repeated" in e for e in collector.stats.errors)
+
+
+@respx.mock
+async def test_registry_error_is_recorded_not_raised():
+    respx.get("https://registry.modelcontextprotocol.io/robots.txt").mock(
+        return_value=httpx.Response(404))
+    respx.get("https://registry.modelcontextprotocol.io/v0/servers").mock(
+        return_value=httpx.Response(500))
+    async with Fetcher(FAST) as fetcher:
+        collector = McpOfficialRegistry(fetcher)
+        assert await collector.collect() == []
+    assert collector.stats.errors
+
+
+def test_merge_records_every_source_for_capture_recapture():
+    shared = "https://shared-example.org/mcp"
+    a = [_endpoint(shared, "mcp-official-registry"), _endpoint("https://a-example.org/mcp", "mcp")]
+    b = [_endpoint(shared, "smithery")]
+    merged = merge_endpoints(a, b)
+    assert len(merged) == 2
+    both = next(e for e in merged if e.url == shared)
+    assert "smithery" in both.source and "mcp" in both.source
+
+
+def test_capture_recapture_uses_chapman_and_reports_no_overlap():
+    a = [_endpoint(f"https://a{i}-example.org/mcp") for i in range(10)]
+    b = [_endpoint(f"https://a{i}-example.org/mcp") for i in range(5, 15)]
+    est = capture_recapture_estimate(a, b)
+    assert est["overlap"] == 5
+    assert est["estimate"] >= 15
+    assert capture_recapture_estimate(a[:2], [_endpoint("https://z-example.org/mcp")])["estimate"] \
+        is None
+
+
+# --- derived agent-card corpus ------------------------------------------------
+
+
+def test_card_endpoints_are_one_per_origin():
+    """Public agent cards are not independently enumerable; deriving them from MCP
+    origins is how a non-trivial sample exists at all, so the derivation is explicit."""
+    endpoints = [
+        _endpoint("https://one-example.org/mcp"),
+        _endpoint("https://one-example.org/other/mcp"),
+        _endpoint("https://two-example.org/mcp"),
+    ]
+    cards = derive_card_endpoints(endpoints)
+    assert len(cards) == 2
+    assert all(c.url.endswith("/.well-known/agent-card.json") for c in cards)
+    assert all(c.source == "derived:mcp-origin" for c in cards)
+    assert origin_of("https://one-example.org/a/b?x=1") == "https://one-example.org"
+
+
+# --- store --------------------------------------------------------------------
+
+
+def _report(url: str = "https://one-example.org/mcp") -> EndpointReport:
+    return EndpointReport(
+        endpoint=_endpoint(url),
+        modality=Modality.OAUTH_METADATA,
+        reachable=True,
+        http_status=401,
+        checks=[CheckResult(check_id=CheckId.PRM_PRESENT, outcome=Outcome.PASS,
+                            normative_strength=NormativeStrength.MUST)],
+        probed_at=datetime.now(UTC),
+        run_id="r1",
+    )
+
+
+def test_round_trip_corpus_and_reports(tmp_path):
+    store = RunStore(tmp_path, "r1")
+    store.write_corpus([_endpoint("https://one-example.org/mcp")])
+    store.append_report(_report())
+    assert [e.url for e in store.read_corpus()] == ["https://one-example.org/mcp"]
+    assert store.read_reports()[0].outcome_of(CheckId.PRM_PRESENT) is Outcome.PASS
+
+
+def test_resume_skips_completed_endpoints(tmp_path):
+    store = RunStore(tmp_path, "r1")
+    store.append_report(_report("https://one-example.org/mcp"))
+    done = store.completed_endpoint_ids()
+    assert endpoint_id("https://one-example.org/mcp") in done
+    assert endpoint_id("https://two-example.org/mcp") not in done
+
+
+def test_truncated_tail_does_not_break_resume(tmp_path):
+    """A run killed mid-write leaves a partial line. Aborting the resume would mean
+    re-fetching thousands of third-party hosts we have already contacted once."""
+    store = RunStore(tmp_path, "r1")
+    store.append_report(_report())
+    with store.reports_path.open("a", encoding="utf-8") as handle:
+        handle.write('{"endpoint": {"endpoint_i')
+    assert len(store.completed_endpoint_ids()) == 1
+    assert len(store.read_reports()) == 1
+
+
+def test_raw_artifact_is_retained_verbatim_for_rescoring(tmp_path):
+    store = RunStore(tmp_path, "r1")
+    body = b'{"resource": "https://one-example.org/mcp"}'
+    store.append_artifact(
+        "e1", "mcp-endpoint",
+        FetchResult(url="https://one-example.org/mcp", ok=True, status=200, body=body,
+                    headers={"content-type": "application/json"}),
+    )
+    artifacts = store.read_artifacts("e1")
+    assert artifacts[0]["body"] == body
+    assert json.loads(artifacts[0]["body"])["resource"] == "https://one-example.org/mcp"
+    raw_line = json.loads(store.artifacts_path.read_text(encoding="utf-8").splitlines()[0])
+    assert base64.b64decode(raw_line["body_b64"]) == body
+
+
+def test_manifest_records_provenance(tmp_path):
+    store = RunStore(tmp_path, "r1")
+    store.write_manifest(
+        RunContext(run_id="r1", vantage_point="residential-TR",
+                   probe_git_commit="deadbeef", started_at=datetime.now(UTC)),
+        extra={"stage": "collect"},
+    )
+    manifest = json.loads(store.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["run_context"]["vantage_point"] == "residential-TR"
+    assert manifest["run_context"]["probe_git_commit"] == "deadbeef"
+
+
+# --- summary ------------------------------------------------------------------
+
+
+def test_summary_funnel_is_conditional_on_the_previous_stage():
+    reports = [_report("https://a-example.org/mcp"), _report("https://b-example.org/mcp")]
+    blocked = EndpointReport(
+        endpoint=_endpoint("https://c-example.org/mcp"),
+        modality=Modality.OAUTH_METADATA,
+        reachable=False,
+        checks=[],
+        probed_at=datetime.now(UTC),
+        run_id="r1",
+    )
+    out = summarise([*reports, blocked])
+    funnel = out["modalities"]["oauth_metadata"]["funnel"]
+    assert funnel[0] == {"stage": "reachable", "n": 2, "of": 3}
+    assert funnel[1]["n"] == 2  # both reachable endpoints passed C05
+    assert funnel[2]["of"] == 2  # next stage is measured against C05 passers only
+
+
+def test_blocked_endpoint_is_not_counted_as_reachable():
+    blocked = FetchResult(url="https://x-example.org/mcp", ok=False, status=403,
+                          error_kind=ErrorKind.BLOCKED)
+    assert blocked.error_kind is ErrorKind.BLOCKED
+
