@@ -37,11 +37,15 @@ class AmbiguousNumberError(JcsError):
     """
 
 
-# ES6 prints integers plainly below 1e21 and switches to exponential at or above it.
-# Below 1e-6 it also switches. Inside this band Python's repr matches ES6 for all
-# doubles; outside it we refuse rather than approximate.
+# ES6 prints plainly below 1e21 and switches to exponential at or above it. Python's
+# repr switches to exponential below 1e-4, while ES6 keeps the plain form down to
+# 1e-6 — so the safe band is bounded by Python's threshold, not ES6's. Review caught
+# this: the earlier 1e-6 bound silently emitted "1e-06" where ES6 writes "0.000001",
+# which is a wrong byte string rather than a refusal, so R6 never fired and the card
+# was falsely convicted of a broken signature.
 _ES6_UPPER = 1e21
-_ES6_LOWER = 1e-6
+_PY_PLAIN_LOWER = 1e-4
+_EXACT_INT_LIMIT = 2**53
 
 
 def _format_number(value: int | float) -> str:
@@ -49,7 +53,7 @@ def _format_number(value: int | float) -> str:
         raise JcsError("bool routed to number formatter")
 
     if isinstance(value, int):
-        if abs(value) >= 2**53:
+        if abs(value) >= _EXACT_INT_LIMIT:
             # Outside the exactly representable double range the JSON producer and the
             # signer may already disagree about the value itself.
             raise AmbiguousNumberError(f"integer {value} exceeds 2^53")
@@ -62,16 +66,32 @@ def _format_number(value: int | float) -> str:
         return "0"  # JCS normalises -0 to 0
 
     magnitude = abs(value)
-    if magnitude >= _ES6_UPPER or magnitude < _ES6_LOWER:
+    if magnitude >= _ES6_UPPER or magnitude < _PY_PLAIN_LOWER:
         raise AmbiguousNumberError(f"number {value!r} falls in the ES6/Python divergent range")
 
     if value.is_integer():
+        # The integral branch needs the same 2^53 guard as the int branch. Without it a
+        # float like 1.2345678901234567e19 was rendered with its full binary expansion
+        # while ES6 uses shortest-round-trip and zero-pads — differing bytes, hence a
+        # spurious signature failure.
+        if magnitude >= _EXACT_INT_LIMIT:
+            raise AmbiguousNumberError(f"integral float {value!r} exceeds 2^53")
         return str(int(value))
 
     return repr(value)
 
 
+def _reject_lone_surrogates(value: str) -> None:
+    """`json.loads` happily produces lone surrogates from "\\ud800", which cannot be
+    UTF-8 encoded. Left unguarded this raised UnicodeEncodeError out of the checker and
+    killed the whole run rather than marking one card unscoreable."""
+    for ch in value:
+        if 0xD800 <= ord(ch) <= 0xDFFF:
+            raise JcsError(f"lone surrogate U+{ord(ch):04X} cannot be canonicalized")
+
+
 def _escape_string(value: str) -> str:
+    _reject_lone_surrogates(value)
     out = ['"']
     for ch in value:
         code = ord(ch)
@@ -98,7 +118,12 @@ def _escape_string(value: str) -> str:
 
 
 def _utf16_sort_key(key: str) -> tuple[int, ...]:
-    """RFC 8785 sorts member names by their UTF-16 code units."""
+    """RFC 8785 sorts member names by their UTF-16 code units.
+
+    Big-endian byte order makes byte-lexicographic ordering equivalent to code-unit
+    ordering, so encoding is enough — no manual surrogate handling is needed here.
+    """
+    _reject_lone_surrogates(key)
     return tuple(key.encode("utf-16-be"))
 
 

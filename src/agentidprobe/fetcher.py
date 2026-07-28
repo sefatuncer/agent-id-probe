@@ -104,19 +104,20 @@ def classify_block(status: int | None, headers: dict[str, str], body: bytes) -> 
         return False  # these are genuine answers about the resource
     if status in (403, 429):
         return True
+    # Body fingerprints are only meaningful in an HTML interstitial. Applied to JSON
+    # they misfire on ordinary payloads — an API answering {"error": "Access denied"}
+    # is the origin talking, not a WAF, and review found such endpoints were both
+    # dropped from the denominator and charged against the host failure budget.
+    lowered = {k.lower(): (v or "").lower() for k, v in headers.items()}
+    is_html = "text/html" in lowered.get("content-type", "")
+    if is_html and body and any(m in body[:4096] for m in _BLOCK_BODY_MARKERS):
+        return True
     if status == 503:
-        head = body[:4096]
-        if any(m in head for m in _BLOCK_BODY_MARKERS):
-            return True
-        lowered = {k.lower(): (v or "").lower() for k, v in headers.items()}
-        return any(
-            hint in lowered.get(name, "") if hint else name in lowered
-            for name, hint in _BLOCK_HEADER_HINTS
-        )
-    if status == 200 and body:
-        head = body[:4096]
-        if any(m in head for m in _BLOCK_BODY_MARKERS):
-            return True
+        # A bare 503 is an outage. Requiring a body fingerprint rather than trusting a
+        # `server: cloudflare` header matters: CDN use correlates with operational
+        # maturity, so header-only classification would bias exactly the population we
+        # are trying to measure.
+        return any(name in lowered for name, hint in _BLOCK_HEADER_HINTS if not hint)
     return False
 
 
@@ -269,10 +270,14 @@ class Fetcher:
                     return response
 
                 chain.append(current)
+                # `has_redirect_location` rather than `is_redirect`: httpx only builds
+                # next_request for statuses it considers followable, so a 300 or 305
+                # carrying a Location left the loop re-requesting the same URL until
+                # the hop budget ran out and reported a bogus redirect-limit error.
                 if (
-                    response.is_redirect
+                    response.has_redirect_location
                     and self.config.scope.follow_redirects
-                    and response.headers.get("location")
+                    and response.next_request is not None
                 ):
                     current = str(response.next_request.url) if response.next_request else current
                     continue

@@ -35,19 +35,41 @@ def test_401_and_404_are_genuine_answers_not_blocks():
 
 def test_cloudflare_challenge_served_with_200_is_a_block():
     body = b"<html><head><title>Just a moment...</title></head></html>"
-    assert classify_block(200, {"server": "cloudflare"}, body) is True
+    headers = {"server": "cloudflare", "content-type": "text/html; charset=UTF-8"}
+    assert classify_block(200, headers, body) is True
 
 
 def test_plain_503_is_an_outage_not_a_block():
     assert classify_block(503, {}, b"upstream unavailable") is False
 
 
-def test_503_with_waf_fingerprint_is_a_block():
-    assert classify_block(503, {}, b"...Incapsula incident ID: 1234...") is True
+def test_503_html_interstitial_is_a_block():
+    headers = {"content-type": "text/html"}
+    assert classify_block(503, headers, b"...Incapsula incident ID: 1234...") is True
+
+
+def test_503_with_waf_specific_header_is_a_block():
+    assert classify_block(503, {"x-datadome": "protected"}, b"") is True
+
+
+def test_503_from_a_cdn_backed_origin_is_still_just_an_outage():
+    """CDN use correlates with operational maturity, so classifying `server: cloudflare`
+    alone as a block would systematically drop the more mature half of the population —
+    the opposite of what decision rule R4 exists to prevent."""
+    assert classify_block(503, {"server": "cloudflare"}, b"upstream error") is False
 
 
 def test_ordinary_json_200_is_not_a_block():
     assert classify_block(200, {"content-type": "application/json"}, b'{"issuer":"x"}') is False
+
+
+def test_json_error_payload_mentioning_access_denied_is_not_a_block():
+    """The origin is talking. Misreading it as a WAF both drops the endpoint from the
+    denominator and charges it against the host failure budget, which can evict every
+    other endpoint on the same host."""
+    headers = {"content-type": "application/json"}
+    assert classify_block(200, headers, b'{"error":"Access denied","code":403}') is False
+    assert classify_block(200, headers, b'{"detail":"Request blocked by policy"}') is False
 
 
 # --- fetching -----------------------------------------------------------------

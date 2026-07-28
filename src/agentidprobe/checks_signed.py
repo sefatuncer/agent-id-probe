@@ -26,6 +26,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from joserfc import jws
 from joserfc.jwk import KeySet
+from joserfc.jws import JWSRegistry
 
 from .fetcher import ErrorKind, Fetcher, FetchResult
 from .jcs import AmbiguousNumberError, JcsError, canonicalize
@@ -41,6 +42,22 @@ SPEC_DIDWEB = "https://w3c-ccg.github.io/did-method-web/"
 # alongside a public key set means anyone holding the published key can forge.
 _FORBIDDEN_ALGS = {"none", "HS256", "HS384", "HS512"}
 _MIN_RSA_BITS = 2048
+
+# joserfc's default registry admits only HS256/RS256/ES256 and rejects anything else as
+# unsupported. Review showed that swallowed every valid ES384, PS256, RS512 and EdDSA
+# signature into a "broken signature" verdict — and EdDSA is the usual choice for
+# did:web, so the default would have zeroed out the very population we are counting.
+# strict_check_header is off because real cards carry extra protected members (`iat`,
+# `x5c`); an unrecognised header is not a forged signature.
+_VERIFY_REGISTRY = JWSRegistry(
+    algorithms=[
+        "RS256", "RS384", "RS512",
+        "PS256", "PS384", "PS512",
+        "ES256", "ES384", "ES512",
+        "EdDSA", "Ed25519",
+    ],
+    strict_check_header=False,
+)
 
 
 def _b64url(data: bytes) -> str:
@@ -263,11 +280,17 @@ async def probe_signed(
 
         problem = _key_strength_problem(header, key_set)
         if problem:
+            # A signature that "verifies" under `none`, under a symmetric algorithm whose
+            # key the operator publishes, or under an undersized RSA key is not evidence
+            # of anything: anyone holding the public material can produce it. Counting it
+            # as a cryptographic binding would inflate the paper's headline number, so it
+            # is never attempted rather than attempted and passed.
             strength_problems.append(problem)
+            continue
 
         compact = f"{sig.get('protected')}.{payload_b64}.{sig.get('signature', '')}"
         try:
-            jws.deserialize_compact(compact, key_set)
+            jws.deserialize_compact(compact, key_set, registry=_VERIFY_REGISTRY)
             verified_any = True
             ev.verified_count += 1
         except Exception:  # noqa: BLE001 - a bad signature is data, not a crash

@@ -75,8 +75,36 @@ def test_large_magnitude_is_ambiguous_rather_than_guessed():
 
 
 def test_ordinary_magnitudes_are_not_ambiguous():
-    assert canonicalize(1e20) == b"100000000000000000000"
     assert canonicalize(0.5) == b"0.5"
+    assert canonicalize(1234.5) == b"1234.5"
+    assert canonicalize(0.0001) == b"0.0001"
+
+
+def test_refusal_above_2_53_is_deliberately_conservative():
+    """1e20 is exactly representable and ES6 would print it plainly, so refusing it is
+    stricter than the RFC demands. That is the intended trade: above 2^53 an integral
+    float's exact binary value and its shortest round-trip form can diverge, and we
+    would rather mark a card unscoreable (R6) than convict it of a broken signature.
+    Agent Cards do not carry numbers of this magnitude."""
+    with pytest.raises(AmbiguousNumberError):
+        canonicalize(1e20)
+
+
+def test_python_repr_threshold_not_es6_threshold_bounds_the_safe_band():
+    """Python switches to exponential below 1e-4 while ES6 keeps the plain form down to
+    1e-6. The band must be bounded by Python's threshold: at 0.000001 the earlier code
+    emitted "1e-06" where ES6 writes "0.000001" — wrong bytes rather than a refusal."""
+    with pytest.raises(AmbiguousNumberError):
+        canonicalize(0.000001)
+
+
+def test_lone_surrogate_is_refused_not_crashed():
+    """json.loads accepts "\\ud800" and produces a string that cannot be UTF-8 encoded.
+    Unguarded this escaped as UnicodeEncodeError and took down the whole run."""
+    with pytest.raises(JcsError):
+        canonicalize({"name": "\ud800 agent"})
+    with pytest.raises(JcsError):
+        canonicalize({"\ud800": 1})
 
 
 def test_non_string_keys_rejected():

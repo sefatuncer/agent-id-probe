@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CheckId(str, Enum):
@@ -138,6 +138,11 @@ class Endpoint(BaseModel):
 
 
 class CheckResult(BaseModel):
+    # Frozen so decision rule R1 cannot be bypassed after construction. Review showed
+    # that plain assignment and model_copy(update=...) both slipped past the validator,
+    # which would let a re-scoring pass quietly turn an UNSPECIFIED into a failure.
+    model_config = ConfigDict(frozen=True, validate_assignment=True)
+
     check_id: CheckId
     outcome: Outcome
     normative_strength: NormativeStrength
