@@ -1,0 +1,83 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c12-conforming-root-fallback-names-the-origin",
+  "modality": "oauth_metadata",
+  "title": "Endpoint has a path, metadata lives at the root form, document names the origin",
+  "exercises": {
+    "C12": "conforming"
+  },
+  "decision_rules": [
+    "R9.1"
+  ],
+  "rationale": "Deriving the expectation from the raw endpoint URL reported a 75% C12 violation rate across eight large live MCP endpoints where the correct rule gives 25%; the difference was entirely instrument error and it landed directly on the paper's headline number. Whether a root document covers a path-bearing endpoint is a separate question, recorded descriptively as `prm_scope_covers_endpoint` because RFC 9728 7.6 puts it out of scope.",
+  "spec": [
+    {
+      "source": "RFC 9728",
+      "section": "3.3",
+      "url": "https://www.rfc-editor.org/rfc/rfc9728.html#section-3.3",
+      "quote": "The `resource` value returned MUST be identical to the protected resource's resource identifier value into which the well-known URI path suffix was inserted to create the URL used to retrieve the metadata. If these values are not identical, the data contained in the response MUST NOT be used.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    },
+    {
+      "source": "MCP Authorization",
+      "section": "Authorization Server Discovery",
+      "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization",
+      "quote": "clients ... MUST fall back to constructing and requesting the well-known URIs in the order listed above",
+      "verification": "verbatim-verified in docs/spec-mapping.md (docs/decision-rules.md R9.1)"
+    },
+    {
+      "source": "RFC 9728",
+      "section": "7.6",
+      "url": "https://www.rfc-editor.org/rfc/rfc9728.html#section-7.6",
+      "quote": "Secure determination of appropriate authorization servers to use with a protected resource for all use cases is out of scope for this specification.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 404,
+      "comment": "path-suffixed form absent, so MCP's root fallback applies"
+    },
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org",
+        "authorization_servers": [
+          "https://auth.example.org"
+        ]
+      },
+      "comment": "consistent for the identifier it was served under"
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org",
+        "code_challenge_methods_supported": [
+          "S256"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C12": "pass",
+      "C05": "pass"
+    },
+    "evidence": {
+      "resource_relation": "identical",
+      "declared_resource": "https://api.example.org",
+      "expected_resource": "https://api.example.org",
+      "prm_scope_covers_endpoint": false
+    }
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c12-undecidable-trailing-slash",
+  "modality": "oauth_metadata",
+  "title": "Document echoes `/mcp/` where the recovered identifier is `/mcp`",
+  "exercises": {
+    "C12": "undecidable"
+  },
+  "decision_rules": [
+    "R6",
+    "R9.3",
+    "R9.4",
+    "R9.5"
+  ],
+  "rationale": "RFC 9728 3.1 strips the terminating slash before inserting the well-known suffix, so `https://api.example.org/mcp` and `.../mcp/` are served from the same URL. Recovering the identifier back out therefore yields a two-element set, not a value: a server whose identifier really is `/mcp/` conforms perfectly by echoing `/mcp/`, and one whose identifier is `/mcp` violates 3.3 by doing the same. The instrument cannot separate them, so scoring this as a failure would put an undecidable class into the headline violation rate - the easiest possible target for 'you chose the threshold that favoured your result'. Contrast `c13-violating-trailing-slash-on-path-issuer`, where the left-hand side is observed and the same difference is a real violation.",
+  "spec": [
+    {
+      "source": "RFC 9728",
+      "section": "3.1",
+      "url": "https://www.rfc-editor.org/rfc/rfc9728.html#section-3.1",
+      "quote": "If the resource identifier value contains a path or query component, any terminating slash (/) following the host component MUST be removed before inserting /.well-known/ and the well-known URI path suffix between the host component and the path and/or query components.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    },
+    {
+      "source": "RFC 9728",
+      "section": "3.3",
+      "url": "https://www.rfc-editor.org/rfc/rfc9728.html#section-3.3",
+      "quote": "The `resource` value returned MUST be identical to the protected resource's resource identifier value into which the well-known URI path suffix was inserted to create the URL used to retrieve the metadata. If these values are not identical, the data contained in the response MUST NOT be used.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org/mcp/",
+        "authorization_servers": [
+          "https://auth.example.org"
+        ]
+      },
+      "comment": "everything but the `resource` value is conforming"
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org",
+        "code_challenge_methods_supported": [
+          "S256"
+        ]
+      },
+      "comment": "conforming, so only C12 is under test"
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C12": "unspecified",
+      "C05": "pass"
+    },
+    "evidence": {
+      "resource_relation": "trailing_slash_only",
+      "declared_resource": "https://api.example.org/mcp/"
+    }
+  }
+}

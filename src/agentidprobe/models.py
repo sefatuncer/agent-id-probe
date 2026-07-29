@@ -106,8 +106,86 @@ DESCRIPTIVE_ONLY: frozenset[CheckId] = frozenset(
         # RFC 9728 4: `protected_resources` is OPTIONAL, and 7.6 puts the selection problem
         # it addresses explicitly out of scope.
         CheckId.PROTECTED_RESOURCES_DECLARED,
+        # Demoted on 29 July 2026 after the anchor was read rather than assumed. RFC 8414 2
+        # marks `code_challenge_methods_supported` "OPTIONAL"; RFC 9700 (BCP 240) 2.1.1 --
+        # the only text bridging "authorization servers MUST support PKCE" to advertising
+        # it -- sets that bridge at RECOMMENDED and adds that a server "MAY instead provide
+        # a deployment-specific way", which no passive prober can observe. The sentence
+        # this check used to cite ("MCP clients MUST refuse to proceed") binds the client.
+        CheckId.PKCE_DECLARED,
     }
 )
+
+
+class BoundParty(StrEnum):
+    """Whose obligation the anchoring sentence states.
+
+    This is the paper's argument in one column, and it is the reason Table 1 exists rather
+    than a list of check names: the clauses along the discovery chain bind different
+    parties, and at the step that decides which issuer a client will trust, none of them
+    binds anybody. It is also an R1 guard with teeth — a sentence that binds the *client*
+    describes an obligation a passive probe cannot observe, so a check anchored to one
+    must be descriptive-only or it is scoring one party for another's obligation.
+    """
+
+    RESOURCE_SERVER = "resource server"
+    AUTHORIZATION_SERVER = "authorization server"
+    CLIENT = "client"
+    CARD_PUBLISHER = "card publisher"
+
+
+# (short clause label, party the anchoring sentence binds), one row per live check.
+#
+# The label is deliberately short: the verbatim sentences are quoted in the paper's §2
+# where each is argued, and repeating them here would put the same text in the manuscript
+# twice. `tests/test_paper_table.py` asserts that every label's RFC number really appears
+# in a `spec_ref` or `spec_url` the code emits for that check, so the label cannot drift
+# into naming a clause the instrument does not cite.
+SPEC_ANCHOR_SUMMARY: dict[CheckId, tuple[str, BoundParty]] = {
+    CheckId.IDENTITY_METADATA_PUBLISHED: ("A2A agent discovery", BoundParty.CARD_PUBLISHER),
+    CheckId.CARD_SIGNED: ("A2A §4.4.7", BoundParty.CARD_PUBLISHER),
+    CheckId.KEY_RESOLVABLE: ("A2A §8.4", BoundParty.CARD_PUBLISHER),
+    CheckId.SIGNATURE_VERIFIES: ("RFC 7515 §5.2; RFC 8785", BoundParty.CARD_PUBLISHER),
+    CheckId.PRM_PRESENT: ("RFC 9728 §3.2", BoundParty.RESOURCE_SERVER),
+    CheckId.WWW_AUTH_RESOURCE_METADATA: ("MCP Authorization, discovery",
+                                         BoundParty.RESOURCE_SERVER),
+    CheckId.SENDER_CONSTRAINED: ("RFC 9449", BoundParty.AUTHORIZATION_SERVER),
+    CheckId.REVOCATION_DECLARED: ("RFC 7009; RFC 8414", BoundParty.AUTHORIZATION_SERVER),
+    CheckId.TLS_VALID: ("MCP Authorization, HTTPS", BoundParty.RESOURCE_SERVER),
+    CheckId.PRM_RESOURCE_IDENTITY_MATCH: ("RFC 9728 §3.3", BoundParty.RESOURCE_SERVER),
+    CheckId.AS_CORRESPONDENCE: ("RFC 8414 §3.3", BoundParty.AUTHORIZATION_SERVER),
+    CheckId.PKCE_DECLARED: ("RFC 9700 §2.1.1; RFC 8414 §2", BoundParty.AUTHORIZATION_SERVER),
+    CheckId.KEY_STRENGTH: ("RFC 7518", BoundParty.CARD_PUBLISHER),
+    # RFC 9207 §3 binds the authorization server -- "the authorization server MUST
+    # indicate its support for the iss parameter" -- and that is the sentence governing
+    # the thing this check observes. RFC 9700 §2.1's REQUIRED binds the client and is
+    # the motivation, not the anchor. Recorded as CLIENT until 29 July 2026, when the
+    # Figure 1 cross-check caught the disagreement; the paper's §2 already said this.
+    # It stays descriptive regardless: RFC 9207 §3's MUST is conditional on supporting
+    # the parameter, so an absent flag means "does not support", which nothing forbids.
+    CheckId.ISS_PARAMETER_DECLARED: ("RFC 9207 §3", BoundParty.AUTHORIZATION_SERVER),
+    CheckId.CLIENT_BOOTSTRAP_DECLARED: ("MCP Authorization, registration",
+                                        BoundParty.CLIENT),
+    CheckId.PROTECTED_RESOURCES_DECLARED: ("RFC 9728 §4", BoundParty.AUTHORIZATION_SERVER),
+}
+
+# Empty, and kept rather than deleted so the guard survives its own success.
+#
+# It held C14 for one day. C14 reported a failure against the authorization server while
+# anchored to "MCP clients MUST refuse to proceed" -- a sentence binding the client. The
+# resolution was not chosen: three independent readings of the primary text agreed that no
+# sentence in the frozen revision set makes an absent `code_challenge_methods_supported` an
+# authorization-server violation. RFC 8414 §2 marks the element OPTIONAL; RFC 9700 §2.1.1
+# sets publishing it at RECOMMENDED and expressly permits "a deployment-specific way"
+# instead; and the one server-binding MUST that does exist (MCP 2025-11-25, conditioned on
+# OpenID Connect Discovery) is absent from MCP 2025-06-18, which R7 makes the governing
+# revision. C14 became descriptive and left the OAuth funnel.
+#
+# The precedent was already in this repository: MCP's Resource Indicators clause was
+# rejected as unmeasurable for the identical reason, and C07 was rewritten for it. C14 was
+# the same shape and nobody had noticed. `tests/test_paper_table.py` keeps this set empty,
+# so the third instance fails a build instead of reaching a reviewer.
+CLIENT_BOUND_BUT_FAILABLE: frozenset[CheckId] = frozenset()
 
 
 def resolve_precedence(outcomes: list[Outcome]) -> Outcome:
@@ -262,7 +340,11 @@ FUNNEL_OAUTH: list[tuple[str, CheckId | None]] = [
     ("publishes protected-resource metadata", CheckId.PRM_PRESENT),
     ("resource identifier matches", CheckId.PRM_RESOURCE_IDENTITY_MATCH),
     ("declared issuer corresponds", CheckId.AS_CORRESPONDENCE),
-    ("PKCE declared", CheckId.PKCE_DECLARED),
+    # C14 was the fifth stage until 29 July 2026. A descriptive check cannot be a funnel
+    # stage here: `runner.summarise()` narrows each stage to its PASS set, so a
+    # non-advertising endpoint would count in the denominator and never in the numerator --
+    # the "composition as failure" error that the same function's docstring exists to warn
+    # about. The funnel now ends where the paper's thesis does, at issuer correspondence.
 ]
 
 FUNNEL_SIGNED: list[tuple[str, CheckId | None]] = [

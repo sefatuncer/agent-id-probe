@@ -509,7 +509,10 @@ async def test_c14_missing_pkce_declaration():
     respx.get(AS_URL).mock(return_value=httpx.Response(200, json={"issuer": ISSUER}))
     async with Fetcher(FAST) as f:
         checks, _ = await probe_oauth(f, RESOURCE, _initial())
-    assert _outcome(checks, CheckId.PKCE_DECLARED) is Outcome.FAIL_UNIMPLEMENTED
+    # Descriptive since 29 July 2026: an absent element is permitted by RFC 8414 §2 and
+    # by RFC 9700 §2.1.1's "MAY instead provide a deployment-specific way", so the
+    # instrument records it without convicting the issuer of anything.
+    assert _outcome(checks, CheckId.PKCE_DECLARED) is Outcome.UNSPECIFIED
 
 
 @respx.mock

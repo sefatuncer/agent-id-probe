@@ -1,0 +1,64 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c14-conforming-pkce-declared",
+  "modality": "oauth_metadata",
+  "title": "Authorization server advertises `code_challenge_methods_supported`",
+  "exercises": {
+    "C14": "conforming"
+  },
+  "decision_rules": [
+    "R1"
+  ],
+  "rationale": "Read from the authorization-server document already fetched for C13, so it costs no additional request. Descriptive since 29 July 2026: publishing the element is RECOMMENDED rather than required (RFC 9700 2.1.1) and OPTIONAL in the metadata registry (RFC 8414 2), so this fixture pins that a present element is recorded as a pass and never that an absent one is a violation.",
+  "spec": [
+    {
+      "source": "RFC 9700 (BCP 240)",
+      "section": "2.1.1",
+      "url": "https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.1",
+      "quote": "It is RECOMMENDED for authorization servers to publish the element code_challenge_methods_supported in their Authorization Server Metadata [RFC8414] containing the supported PKCE challenge methods.",
+      "verification": "verbatim-verified against rfc-editor.org, 29 July 2026"
+    },
+    {
+      "source": "RFC 8414",
+      "section": "2",
+      "url": "https://www.rfc-editor.org/rfc/rfc8414.html#section-2",
+      "quote": "code_challenge_methods_supported\n      OPTIONAL.  JSON array containing a list of Proof Key for Code Exchange (PKCE) [RFC7636] code challenge methods supported by this authorization server.",
+      "verification": "verbatim-verified against rfc-editor.org, 29 July 2026"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org/mcp",
+        "authorization_servers": [
+          "https://auth.example.org"
+        ]
+      }
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org",
+        "code_challenge_methods_supported": [
+          "S256"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C14": "pass",
+      "C13": "pass"
+    }
+  }
+}

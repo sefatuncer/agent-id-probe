@@ -1,0 +1,71 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c12-violating-case-in-path",
+  "modality": "oauth_metadata",
+  "title": "Document echoes `/MCP` where the identifier is `/mcp`",
+  "exercises": {
+    "C12": "violating"
+  },
+  "decision_rules": [
+    "R9.2",
+    "R9.3"
+  ],
+  "rationale": "One of the three edge cases R8 names explicitly. Path and query are case-sensitive, so this is a genuine mismatch; lowercasing the whole URI to normalise the host would have forgiven it.",
+  "spec": [
+    {
+      "source": "RFC 3986",
+      "section": "6.2.2.1",
+      "url": "https://www.rfc-editor.org/rfc/rfc3986.html#section-6.2.2.1",
+      "quote": "the scheme and host are case-insensitive and therefore should be normalized to lowercase ... The other generic syntax components are assumed to be case-sensitive unless specifically defined otherwise by the scheme.",
+      "verification": "verbatim-verified in docs/spec-mapping.md (docs/decision-rules.md R9.2)"
+    },
+    {
+      "source": "RFC 9728",
+      "section": "6 (String Operations)",
+      "url": "https://www.rfc-editor.org/rfc/rfc9728.html#section-6",
+      "quote": "Comparisons between the two strings MUST be performed as a Unicode code-point-to-code-point equality comparison.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org/MCP",
+        "authorization_servers": [
+          "https://auth.example.org"
+        ]
+      },
+      "comment": "everything but the `resource` value is conforming"
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org",
+        "code_challenge_methods_supported": [
+          "S256"
+        ]
+      },
+      "comment": "conforming, so only C12 is under test"
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C12": "fail_misimplemented",
+      "C05": "pass"
+    },
+    "evidence": {
+      "resource_relation": "case_path_only",
+      "declared_resource": "https://api.example.org/MCP"
+    }
+  }
+}

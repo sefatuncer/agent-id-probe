@@ -39,6 +39,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Rendering the paper's figures, and nothing else. matplotlib was removed from the core
+# dependencies on 2026-07-28 because nothing imported it; `figures.py` now does, and it is
+# an extra rather than a dependency so that the measurement instrument stays installable
+# without a plotting stack. `agentidprobe.figures` imports matplotlib inside its render
+# functions, so the package still imports cleanly when this extra is absent, and the CLI
+# says which extra to install rather than raising ImportError at the reader.
+figures = [
+    "matplotlib>=3.8,<4.0",
+]
 dev = [
     "pytest>=8.2,<10.0",
     "pytest-asyncio>=0.23,<2.0",

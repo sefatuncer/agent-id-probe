@@ -1,0 +1,63 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c12-conforming-uppercase-host",
+  "modality": "oauth_metadata",
+  "title": "Document reflects the resource back with an uppercase host",
+  "exercises": {
+    "C12": "conforming"
+  },
+  "decision_rules": [
+    "R9.2"
+  ],
+  "rationale": "Scheme and host are case-insensitive, so this is the same identifier rather than a near-miss, and it does not belong in the R9.5 sensitivity pair either. The companion fixture `c12-violating-case-in-path` shows why the whole URI must not be lowercased to achieve this.",
+  "spec": [
+    {
+      "source": "RFC 3986",
+      "section": "6.2.2.1",
+      "url": "https://www.rfc-editor.org/rfc/rfc3986.html#section-6.2.2.1",
+      "quote": "the scheme and host are case-insensitive and therefore should be normalized to lowercase ... The other generic syntax components are assumed to be case-sensitive unless specifically defined otherwise by the scheme.",
+      "verification": "verbatim-verified in docs/spec-mapping.md (docs/decision-rules.md R9.2)"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://API.EXAMPLE.ORG/mcp",
+        "authorization_servers": [
+          "https://auth.example.org"
+        ]
+      },
+      "comment": "everything but the `resource` value is conforming"
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org",
+        "code_challenge_methods_supported": [
+          "S256"
+        ]
+      },
+      "comment": "conforming, so only C12 is under test"
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C12": "pass",
+      "C05": "pass"
+    },
+    "evidence": {
+      "resource_relation": "identical",
+      "declared_resource": "https://API.EXAMPLE.ORG/mcp"
+    }
+  }
+}

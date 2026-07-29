@@ -1,0 +1,70 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c13-conforming-root-issuer-trailing-slash",
+  "modality": "oauth_metadata",
+  "title": "Root issuer returns itself with a terminating slash",
+  "exercises": {
+    "C13": "conforming"
+  },
+  "decision_rules": [
+    "R9.2",
+    "R9.4"
+  ],
+  "rationale": "A slash at the root is RFC 3986 equivalence and is normalised away in both checks. R9.4's asymmetry concerns path-bearing identifiers only, and this fixture is what stops that asymmetry from being read as 'C13 forgives trailing slashes'.",
+  "spec": [
+    {
+      "source": "RFC 3986",
+      "section": "6.2.3",
+      "url": "https://www.rfc-editor.org/rfc/rfc3986.html#section-6.2.3",
+      "quote": "the following four URIs are equivalent: http://example.com http://example.com/ http://example.com:/ http://example.com:80/",
+      "verification": "verbatim-verified in docs/spec-mapping.md (docs/decision-rules.md R9.2)"
+    },
+    {
+      "source": "RFC 8414",
+      "section": "3.3",
+      "url": "https://www.rfc-editor.org/rfc/rfc8414.html#section-3.3",
+      "quote": "The `issuer` value returned MUST be identical to the authorization server's issuer identifier value into which the well-known URI string was inserted to create the URL used to retrieve the metadata.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org/mcp",
+        "authorization_servers": [
+          "https://auth.example.org"
+        ]
+      }
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org/",
+        "code_challenge_methods_supported": [
+          "S256"
+        ]
+      },
+      "comment": "root issuer with terminating slash"
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C13": "pass"
+    },
+    "evidence": {
+      "as_issuer_relations": {
+        "https://auth.example.org": "identical"
+      }
+    }
+  }
+}

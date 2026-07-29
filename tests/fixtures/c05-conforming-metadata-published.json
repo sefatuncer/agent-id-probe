@@ -1,0 +1,72 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c05-conforming-metadata-published",
+  "modality": "oauth_metadata",
+  "title": "401 endpoint serves RFC 9728 metadata naming at least one issuer",
+  "exercises": {
+    "C05": "conforming"
+  },
+  "decision_rules": [
+    "R9.1"
+  ],
+  "rationale": "The known-conforming baseline for the OAuth funnel. It also fixes the denominator question that made the pilot's 36.7% PRM figure misleading: this endpoint answered 401, so it opted into authorization and RFC 9728 applies to it. An endpoint that never returns 401 is not measured here at all.",
+  "spec": [
+    {
+      "source": "MCP Authorization",
+      "section": "Authorization Server Discovery",
+      "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization",
+      "quote": "MCP servers MUST implement OAuth 2.0 Protected Resource Metadata (RFC9728). MCP clients MUST use OAuth 2.0 Protected Resource Metadata for authorization server discovery.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    },
+    {
+      "source": "MCP Authorization",
+      "section": "Authorization Server Discovery",
+      "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization",
+      "quote": "The Protected Resource Metadata document returned by the MCP server MUST include the `authorization_servers` field containing at least one authorization server.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org/mcp",
+        "authorization_servers": [
+          "https://auth.example.org"
+        ]
+      },
+      "comment": "path-suffixed well-known form, RFC 9728 3.1"
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org",
+        "code_challenge_methods_supported": [
+          "S256"
+        ]
+      },
+      "comment": "fetched for C13/C14; conforming so nothing else fails"
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C05": "pass",
+      "C12": "pass",
+      "C13": "pass",
+      "C14": "pass"
+    },
+    "evidence": {
+      "prm_url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "resource_relation": "identical"
+    }
+  }
+}

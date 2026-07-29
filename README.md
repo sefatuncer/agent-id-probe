@@ -79,11 +79,16 @@ Python 3.11+ is the only requirement. No account, no API key, no cloud service.
 git clone https://github.com/sefatuncer/agent-id-probe && cd agent-id-probe
 python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-pytest -q                                          # 192 tests, fully mocked, no network
+pytest -q                                          # fully mocked, no network
 ```
 
 Everything, including the statistics, is standard library plus a short list of pinned
-dependencies; there is no scientific stack to install.
+dependencies; there is no scientific stack to install. Rendering the paper's two figures
+is the one exception and is an optional extra:
+
+```bash
+pip install -e ".[dev,figures]"                    # adds matplotlib, nothing else
+```
 
 ## Quickstart
 
@@ -105,6 +110,10 @@ agent-id-probe summarise --run-id trial
 #    moved. A committed synthetic run ships with the repository, so this works on a fresh
 #    clone before you have measured anything:
 agent-id-probe --root . rescore --run-id example --verify
+
+# 6. Draw Figures 1 and 2. `--synthetic` needs no measurement at all: the figures were
+#    designed against a fixture before any data existed, and this is how you check that.
+agent-id-probe figures --synthetic
 ```
 
 ## What a run produces

@@ -1,0 +1,51 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c11-conforming-tls-verified",
+  "modality": "oauth_metadata",
+  "title": "HTTPS endpoint whose certificate chain and hostname both verified",
+  "exercises": {
+    "C11": "conforming"
+  },
+  "decision_rules": [
+    "R4"
+  ],
+  "rationale": "C11 is a prevalence measure, not a violation detector: a refused handshake surfaces as a transport error and R4 classifies that as ERROR rather than as non-conformance. Its PASS still carries information, because it is the precondition every other check rests on. This fixture also pins that an open endpoint is NOT_APPLICABLE for the OAuth checks rather than failing them.",
+  "spec": [
+    {
+      "source": "MCP Authorization",
+      "section": "Security Considerations",
+      "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization",
+      "quote": "All authorization server endpoints MUST be served over HTTPS.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    },
+    {
+      "source": "MCP Authorization",
+      "section": "Overview",
+      "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization",
+      "quote": "Authorization is OPTIONAL for MCP implementations.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 200,
+      "tls": {
+        "version": "TLSv1.3",
+        "chain_valid": true,
+        "san_match": true
+      },
+      "comment": "httpx verifies chain and hostname, so a completed handshake is the evidence; no request is issued by this fixture at all"
+    }
+  },
+  "documents": [],
+  "expect": {
+    "checks": {
+      "C11": "pass",
+      "C05": "not_applicable",
+      "C12": "not_applicable",
+      "C13": "not_applicable",
+      "C14": "not_applicable"
+    }
+  }
+}

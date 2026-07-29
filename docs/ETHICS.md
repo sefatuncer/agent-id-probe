@@ -228,24 +228,46 @@ The realistic worst case is that a fragile endpoint is disturbed by our requests
 
 ## 11. Preconditions — the run does not start until all are true
 
-1. [ ] The repository is public and the `INFO_URL` in `config.py` resolves. **Today it is a
-   placeholder (`https://github.com/<org>/agent-id-probe`).** Until it resolves, every
-   request we send carries a dead link, which defeats the entire identification and opt-out
-   basis of this document. This is the hardest precondition here.
-2. [ ] The page at that URL describes the study, lists the requests, and carries the opt-out
+1. [x] The repository is public and the `INFO_URL` in `config.py` resolves.
+   > Closed on 29 July 2026. It was `https://github.com/<org>/agent-id-probe` — a literal
+   > placeholder — until then, so every request would have carried a dead link and no
+   > operator could have found out who was contacting them or asked us to stop. It now
+   > points at <https://github.com/sefatuncer/agent-id-probe>, which is public.
+2. [x] The page at that URL describes the study, lists the requests, and carries the opt-out
    address.
+   > `README.md` opens with that block, addressed to an operator who has just found our
+   > `User-Agent` in their logs: what we requested, why, and the one line that stops it.
 3. [ ] A narrow slice (~200 endpoints) has been run and its block rate, error budget, and
    rate-limit behaviour reviewed.
-4. [ ] `docs/decision-rules.md` is frozen **and committed**, and the instrument passes its
+4. [x] `docs/decision-rules.md` is frozen **and committed**, and the instrument passes its
    conformance fixtures.
-   > Both halves are currently unmet and the box was wrongly ticked. The rules exist only
-   > in an uncommitted working tree, so "frozen before collection" is an assertion with no
-   > timestamp behind it. And decision rule R8 names `tests/fixtures/` specifically; that
-   > directory does not exist. Conformance cases for the reported MUST-level checks
-   > (C05, C12, C13, C14) are present as inline tests, but C03, C04 and C15 have none —
-   > those belong to the terminated signed-document arm, so the resolution is either to
-   > build their fixtures or to write the exemption into R8 explicitly. Until one of those
-   > is done, this box stays unticked.
+   > Both halves were unmet on 28 July and the box was wrongly ticked then. Both are now
+   > met, and the record of how matters more than the tick.
+   >
+   > *Committed:* commit `a1408d1` (29 July 2026) carries the rules and the amendment log,
+   > so "frozen before collection" now has a timestamp behind it rather than an assertion.
+   >
+   > *Fixtures:* `tests/fixtures/` exists — 30 self-describing JSON fixtures, each quoting
+   > the specification sentence it derives from, driven over the real check functions by
+   > `tests/test_conformance_pack.py`. Coverage is not asserted by hand: the set of checks
+   > R8 leg 1 binds is recovered from the abstract syntax tree of `checks_oauth.py` and
+   > `checks_signed.py` by `scripts/gen_catalogue.py:must_level_failable_checks()`, and a
+   > parametrised test fails if any of them lacks either a conforming or a violating
+   > fixture. Seven checks qualify (C03, C04, C05, C11, C12, C13, C15) and all seven
+   > have both, so the C03/C04/C15 exemption contemplated here was not needed. C14 was
+   > the eighth until 29 July 2026, when reading its anchor showed it could not convict
+   > anybody; it left the set automatically, because the set is derived from the code.
+   >
+   > Two caveats belong on the record rather than in a passing grade. **C11's violating
+   > branches cannot occur in the field**: a refused handshake surfaces as a transport
+   > error, which R4 makes an `ERROR`, and the collectors drop non-HTTPS URLs before
+   > probing. Its fixtures are therefore synthetic and a "C11 violation rate" is
+   > structurally zero — it must be reported as a property of the instrument, never as a
+   > property of the ecosystem. And the C03/C04/C15 fixtures pin **instrument behaviour**
+   > while carrying an explicit `verification` field recording that their anchors (A2A
+   > §8.4, RFC 7515 §5.2, RFC 7518 §3.6) are still unconfirmed against the source text,
+   > matching the ⚠️ rows in `docs/spec-mapping.md`. A fixture cannot certify an anchor
+   > nobody has checked.
 5. [ ] The ethics-board determination in §12 has been requested.
 6. [x] The opt-out list (`docs/opt-out.txt`) exists and is enforced in the fetcher.
 7. [x] The global abort threshold is set in code (`AbortPolicy`), not only in this document.

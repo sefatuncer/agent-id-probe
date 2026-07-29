@@ -1,0 +1,70 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c12-violating-scheme-mismatch",
+  "modality": "oauth_metadata",
+  "title": "Document names the same authority over plaintext http",
+  "exercises": {
+    "C12": "violating"
+  },
+  "decision_rules": [
+    "R9.3"
+  ],
+  "rationale": "Named as its own relation rather than swept into a catch-all, because the severity ordering inside one host - scheme, then port, then path - is what lets the paper report a taxonomy instead of an undifferentiated count.",
+  "spec": [
+    {
+      "source": "RFC 9728",
+      "section": "3.3",
+      "url": "https://www.rfc-editor.org/rfc/rfc9728.html#section-3.3",
+      "quote": "The `resource` value returned MUST be identical to the protected resource's resource identifier value into which the well-known URI path suffix was inserted to create the URL used to retrieve the metadata. If these values are not identical, the data contained in the response MUST NOT be used.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    },
+    {
+      "source": "MCP Authorization",
+      "section": "Security Considerations",
+      "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization",
+      "quote": "All authorization server endpoints MUST be served over HTTPS.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "http://api.example.org/mcp",
+        "authorization_servers": [
+          "https://auth.example.org"
+        ]
+      },
+      "comment": "everything but the `resource` value is conforming"
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org",
+        "code_challenge_methods_supported": [
+          "S256"
+        ]
+      },
+      "comment": "conforming, so only C12 is under test"
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C12": "fail_misimplemented",
+      "C05": "pass"
+    },
+    "evidence": {
+      "resource_relation": "scheme_only",
+      "declared_resource": "http://api.example.org/mcp"
+    }
+  }
+}

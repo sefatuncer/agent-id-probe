@@ -1,0 +1,70 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c13-conforming-issuer-echoes-itself",
+  "modality": "oauth_metadata",
+  "title": "Declared issuer serves metadata whose `issuer` is the declared value",
+  "exercises": {
+    "C13": "conforming"
+  },
+  "decision_rules": [
+    "R9.4",
+    "R10.1"
+  ],
+  "rationale": "The known-conforming case for the second decisive check. The obligation here falls on the authorization server rather than on the MCP server, which is why R10.1 reports C13 per unique issuer as well as per endpoint.",
+  "spec": [
+    {
+      "source": "RFC 8414",
+      "section": "3.3",
+      "url": "https://www.rfc-editor.org/rfc/rfc8414.html#section-3.3",
+      "quote": "The `issuer` value returned MUST be identical to the authorization server's issuer identifier value into which the well-known URI string was inserted to create the URL used to retrieve the metadata.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    },
+    {
+      "source": "RFC 8414",
+      "section": "4",
+      "url": "https://www.rfc-editor.org/rfc/rfc8414.html#section-4",
+      "quote": "Comparisons between the two strings MUST be performed as a Unicode code-point-to-code-point equality comparison.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org/mcp",
+        "authorization_servers": [
+          "https://auth.example.org"
+        ]
+      }
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org",
+        "code_challenge_methods_supported": [
+          "S256"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C13": "pass",
+      "C14": "pass"
+    },
+    "evidence": {
+      "as_issuer_relations": {
+        "https://auth.example.org": "identical"
+      }
+    }
+  }
+}

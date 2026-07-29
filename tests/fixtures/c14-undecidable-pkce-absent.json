@@ -1,0 +1,70 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c14-undecidable-pkce-absent",
+  "modality": "oauth_metadata",
+  "title": "Authorization server metadata omits `code_challenge_methods_supported`",
+  "exercises": {
+    "C14": "undecidable"
+  },
+  "decision_rules": [
+    "R1",
+    "R6",
+    "R7"
+  ],
+  "rationale": "Until 29 July 2026 this fixture asserted a violation, and its own rationale gave the argument R1 exists to reject: that the sentence 'states the client's obligation rather than the server's, but the observable is on the server'. That is the reasoning C16 was made descriptive-only to refuse, and the reasoning MCP's Resource Indicators clause was already rejected for. Reading the primary text settled it: RFC 8414 marks the element OPTIONAL, and RFC 9700 (BCP 240) 2.1.1 -- the only text bridging 'authorization servers MUST support PKCE' to advertising it -- sets that bridge at RECOMMENDED and expressly permits 'a deployment-specific way' instead, which no passive prober can observe. So an absent element is not evidence that any authorization-server MUST was violated. The one server-binding MUST that exists (MCP 2025-11-25, conditioned on OpenID Connect Discovery) is absent from MCP 2025-06-18, which R7 makes the governing revision. The element is still read and still reported; only the verdict class changed.",
+  "spec": [
+    {
+      "source": "RFC 8414",
+      "section": "2",
+      "url": "https://www.rfc-editor.org/rfc/rfc8414.html#section-2",
+      "quote": "code_challenge_methods_supported\n      OPTIONAL.  JSON array containing a list of Proof Key for Code Exchange (PKCE) [RFC7636] code challenge methods supported by this authorization server. ... If omitted, the authorization server does not support PKCE.",
+      "verification": "verbatim-verified against rfc-editor.org, 29 July 2026"
+    },
+    {
+      "source": "RFC 9700 (BCP 240)",
+      "section": "2.1.1",
+      "url": "https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.1",
+      "quote": "Authorization servers MUST provide a way to detect their support for PKCE. It is RECOMMENDED for authorization servers to publish the element code_challenge_methods_supported in their Authorization Server Metadata [RFC8414] containing the supported PKCE challenge methods (which can be used by the client to detect PKCE support). Authorization servers MAY instead provide a deployment-specific way to ensure or determine PKCE support by the authorization server.",
+      "verification": "verbatim-verified against rfc-editor.org and datatracker, 29 July 2026"
+    },
+    {
+      "source": "MCP Authorization, revision 2025-11-25",
+      "section": "Security Considerations, Authorization Code Protection",
+      "url": "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization",
+      "quote": "If `code_challenge_methods_supported` is absent, the authorization server does not support PKCE and MCP clients MUST refuse to proceed.",
+      "verification": "verbatim-verified 29 July 2026; binds the CLIENT, and is absent from revision 2025-06-18, which R7 makes the governing revision"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org/mcp",
+        "authorization_servers": [
+          "https://auth.example.org"
+        ]
+      }
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org"
+      }
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C14": "unspecified",
+      "C13": "pass"
+    }
+  }
+}

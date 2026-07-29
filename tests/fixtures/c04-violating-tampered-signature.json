@@ -1,0 +1,81 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c04-violating-tampered-signature",
+  "modality": "signed_document",
+  "title": "Key resolves but the signature does not verify over the JCS payload",
+  "exercises": {
+    "C04": "violating"
+  },
+  "decision_rules": [
+    "R6"
+  ],
+  "rationale": "The first signature byte is flipped and nothing else changes, so every earlier stage still passes: the card is published, it carries a signature, and the key is reachable. That isolation is the point - a broken signature must be distinguishable from an unreachable key, which is a different finding about a different party.",
+  "key_provenance": "The key pair was generated once with joserfc (P-256) and the signature computed over `signing_payload(card)` -- the card without `signatures`, canonicalised per RFC 8785. Only the public half is recorded, which is all a reviewer needs: any JOSE implementation can recompute the JCS payload from the `card` object below and check this signature against `jwks`. Editing the card without re-signing therefore breaks the fixture, which is the intended behaviour for a frozen conformance case.",
+  "spec": [
+    {
+      "source": "RFC 7515",
+      "section": "5.2 (Message Signature or MAC Validation)",
+      "url": "https://www.rfc-editor.org/rfc/rfc7515.html#section-5.2",
+      "quote": "If any of the listed steps fails, then the signature or MAC cannot be validated. ... the JWS MUST be considered invalid.",
+      "verification": "paraphrase of RFC 7515 5.2's failure clause, NOT confirmed verbatim. checks_signed.py cites `RFC 7515` without a sentence; confirm before publication."
+    },
+    {
+      "source": "A2A",
+      "section": "8.4",
+      "url": "https://a2a-protocol.org/latest/specification/",
+      "quote": "the Agent Card content MUST be canonicalized using the JSON Canonicalization Scheme (JCS) as defined in RFC 8785",
+      "verification": "UNVERIFIED. docs/spec-mapping.md marks C02/C03/C04 with a warning: the published page truncates 8.4 and these sentences could not be confirmed in an independent round. The fixture therefore pins instrument behaviour, and the anchor must be confirmed before any rate derived from it is published."
+    }
+  ],
+  "endpoint": {
+    "url": "https://agent.example.org/.well-known/agent-card.json",
+    "response": {
+      "status": 200,
+      "json": {
+        "name": "Example Agent",
+        "description": "Synthetic A2A Agent Card used only by the R8 conformance pack.",
+        "version": "1.0.0",
+        "protocolVersion": "0.3.0",
+        "url": "https://agent.example.org/a2a",
+        "preferredTransport": "JSONRPC",
+        "signatures": [
+          {
+            "protected": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImFnZW50LWV4YW1wbGUta2V5LTEiLCJqa3UiOiJodHRwczovL2FnZW50LmV4YW1wbGUub3JnLy53ZWxsLWtub3duL2p3a3MuanNvbiJ9",
+            "signature": "slz5OZxq7S0eUb7a995seTeDLXwN6qv2ayAmNdSSGykjFF6WJUIou_Te1eWIF1lv82EsyarQn-V3ez49TIjMQA",
+            "header": {
+              "kid": "agent-example-key-1"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "documents": [
+    {
+      "url": "https://agent.example.org/.well-known/jwks.json",
+      "status": 200,
+      "comment": "resolved from the `jku` member of the protected header",
+      "json": {
+        "keys": [
+          {
+            "crv": "P-256",
+            "kid": "agent-example-key-1",
+            "kty": "EC",
+            "x": "joXMmL4ZbDlGPgXdBZhgKTsMwk2mQwADqmjXkhMRXK4",
+            "y": "2xMThEgqvX3QTv8b07VR-7gSxpXDRojAm1v12ndD6g0"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C03": "pass",
+      "C04": "fail_misimplemented",
+      "C15": "pass"
+    },
+    "evidence": {
+      "verified_count": 0
+    }
+  }
+}

@@ -19,7 +19,7 @@ PROBE_VERSION = "0.1.0"
 # Identifies the crawler and gives operators a way to reach us or opt out.
 # The URL and mailbox must be live before any wide run (see docs/ETHICS.md).
 CONTACT_EMAIL = "tuncersefa@gmail.com"
-INFO_URL = "https://github.com/<org>/agent-id-probe"
+INFO_URL = "https://github.com/sefatuncer/agent-id-probe"
 USER_AGENT = (
     f"agent-id-probe/{PROBE_VERSION} (academic measurement; "
     f"+{INFO_URL}; contact: {CONTACT_EMAIL})"

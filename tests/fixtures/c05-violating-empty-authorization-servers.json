@@ -1,0 +1,47 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c05-violating-empty-authorization-servers",
+  "modality": "oauth_metadata",
+  "title": "Metadata document is served but declares no authorization server",
+  "exercises": {
+    "C05": "violating"
+  },
+  "decision_rules": [
+    "R3"
+  ],
+  "rationale": "A document that parses but names no issuer is misimplementation, not absence, and the two must not collapse into one number: the paper's claim is about declared trust relationships, so 'declared nothing' and 'published nothing' are different observations.",
+  "spec": [
+    {
+      "source": "MCP Authorization",
+      "section": "Authorization Server Discovery",
+      "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization",
+      "quote": "The Protected Resource Metadata document returned by the MCP server MUST include the `authorization_servers` field containing at least one authorization server.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org/mcp",
+        "authorization_servers": []
+      }
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C05": "fail_misimplemented",
+      "C12": "pass",
+      "C13": "not_applicable",
+      "C14": "not_applicable"
+    }
+  }
+}

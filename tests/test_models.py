@@ -85,9 +85,16 @@ def test_every_declared_check_is_actually_emitted_somewhere():
 
 
 def test_r1_rejects_failure_without_must_anchor():
+    """The strength branch of R1, exercised on its own.
+
+    This used C14 until C14 became descriptive-only, at which point the constructor would
+    have raised for the *other* reason and the test would have passed for years without
+    ever reaching the branch it names. C12 is failable and stays failable, so a SHOULD here
+    can only be rejected on strength.
+    """
     with pytest.raises(ValidationError):
         CheckResult(
-            check_id=CheckId.PKCE_DECLARED,
+            check_id=CheckId.PRM_RESOURCE_IDENTITY_MATCH,
             outcome=Outcome.FAIL_UNIMPLEMENTED,
             normative_strength=NormativeStrength.SHOULD,
         )
@@ -130,6 +137,11 @@ def test_descriptive_only_set_matches_intent():
         CheckId.ISS_PARAMETER_DECLARED,
         CheckId.CLIENT_BOOTSTRAP_DECLARED,
         CheckId.PROTECTED_RESOURCES_DECLARED,
+        # Joined on 29 July 2026: RFC 8414 §2 marks `code_challenge_methods_supported`
+        # OPTIONAL and RFC 9700 §2.1.1 sets publishing it at RECOMMENDED while expressly
+        # permitting a deployment-specific alternative, so its absence is not evidence of
+        # any authorization-server MUST being violated.
+        CheckId.PKCE_DECLARED,
     }
 
 

@@ -1,0 +1,46 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c11-violating-untrusted-certificate-chain",
+  "modality": "oauth_metadata",
+  "title": "TLS handshake completed but the chain did not validate",
+  "exercises": {
+    "C11": "violating"
+  },
+  "decision_rules": [
+    "R4"
+  ],
+  "rationale": "The second C11 emission site. In practice httpx refuses such a handshake and R4 turns the refusal into an ERROR, so this verdict is reachable only when certificate details are recovered some other way. Pinned so that the mapping from `chain_valid=false` to a verdict cannot drift unobserved.",
+  "spec": [
+    {
+      "source": "MCP Authorization",
+      "section": "Security Considerations",
+      "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization",
+      "quote": "All authorization server endpoints MUST be served over HTTPS.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    },
+    {
+      "source": "BCP 195 / RFC 9325",
+      "section": "3",
+      "url": "https://www.rfc-editor.org/rfc/rfc9325.html",
+      "quote": "Implementations MUST NOT negotiate the protocol versions SSLv3, TLS 1.0, or TLS 1.1; certificate validation is required.",
+      "verification": "paraphrase of BCP 195's recommendations, NOT a verbatim quotation. The instrument's own anchor is the MCP HTTPS sentence above; BCP 195 is cited alongside it in checks_oauth.py and in docs/spec-mapping.md without a reproduced sentence. Confirm verbatim before publication."
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 200,
+      "tls": {
+        "version": "TLSv1.2",
+        "chain_valid": false,
+        "san_match": true
+      }
+    }
+  },
+  "documents": [],
+  "expect": {
+    "checks": {
+      "C11": "fail_misimplemented"
+    }
+  }
+}

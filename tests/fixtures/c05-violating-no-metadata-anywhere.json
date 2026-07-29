@@ -1,0 +1,53 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c05-violating-no-metadata-anywhere",
+  "modality": "oauth_metadata",
+  "title": "401 endpoint publishes no protected-resource metadata at either well-known form",
+  "exercises": {
+    "C05": "violating"
+  },
+  "decision_rules": [
+    "R3"
+  ],
+  "rationale": "Both candidate locations must be probed before absence is declared. Probing only the root form manufactured failures for correctly configured servers, which is a denominator error that cannot be repaired after collection.",
+  "spec": [
+    {
+      "source": "MCP Authorization",
+      "section": "Authorization Server Discovery",
+      "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization",
+      "quote": "MCP servers MUST implement OAuth 2.0 Protected Resource Metadata (RFC9728). MCP clients MUST use OAuth 2.0 Protected Resource Metadata for authorization server discovery.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    },
+    {
+      "source": "MCP Authorization",
+      "section": "Authorization Server Discovery",
+      "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization",
+      "quote": "clients ... MUST fall back to constructing and requesting the well-known URIs in the order listed above",
+      "verification": "verbatim-verified in docs/spec-mapping.md (docs/decision-rules.md R9.1)"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 404,
+      "comment": "RFC 9728 3.1 path-suffixed form"
+    },
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource",
+      "status": 404,
+      "comment": "MCP's mandated fallback; absence only counts once both are tried"
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C05": "fail_unimplemented"
+    }
+  }
+}

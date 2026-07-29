@@ -1,0 +1,63 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c12-violating-same-host-different-path",
+  "modality": "oauth_metadata",
+  "title": "Document names a different path on the same host",
+  "exercises": {
+    "C12": "violating"
+  },
+  "decision_rules": [
+    "R9.3"
+  ],
+  "rationale": "One of the three edge cases R8 names explicitly, and the one that separates a misconfigured deployment from a hostile one: the operator is the same, the resource identified is not.",
+  "spec": [
+    {
+      "source": "RFC 9728",
+      "section": "3.3",
+      "url": "https://www.rfc-editor.org/rfc/rfc9728.html#section-3.3",
+      "quote": "The `resource` value returned MUST be identical to the protected resource's resource identifier value into which the well-known URI path suffix was inserted to create the URL used to retrieve the metadata. If these values are not identical, the data contained in the response MUST NOT be used.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org/other",
+        "authorization_servers": [
+          "https://auth.example.org"
+        ]
+      },
+      "comment": "everything but the `resource` value is conforming"
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org",
+        "code_challenge_methods_supported": [
+          "S256"
+        ]
+      },
+      "comment": "conforming, so only C12 is under test"
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C12": "fail_misimplemented",
+      "C05": "pass"
+    },
+    "evidence": {
+      "resource_relation": "same_host_different_path",
+      "declared_resource": "https://api.example.org/other"
+    }
+  }
+}

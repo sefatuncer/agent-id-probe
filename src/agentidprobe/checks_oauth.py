@@ -31,7 +31,18 @@ from .fetcher import ErrorKind, Fetcher, FetchResult
 from .jcs import canonicalize
 from .models import CheckId, CheckResult, NormativeStrength, Outcome
 
-SPEC_MCP = "https://modelcontextprotocol.io/specification/latest/basic/authorization"
+# Pinned to a dated revision, not `/latest/`. Decision rule R7 freezes the revision set
+# precisely so a specification published on the day of the run cannot be swallowed
+# silently -- and that is no longer hypothetical: `/latest/` resolves to revision
+# 2026-07-28, which is outside the frozen set and which moved the authorization
+# text onto sub-pages, so several sentences cited below are not on that page at all.
+# Every stored verdict records this URL, so an unpinned anchor means a reviewer
+# following the link from the data finds a document that does not contain the quote.
+SPEC_MCP = "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization"
+SPEC_MCP_2025_11_25 = (
+    "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization"
+)
+SPEC_RFC9700 = "https://www.rfc-editor.org/rfc/rfc9700.html"
 SPEC_RFC9728 = "https://www.rfc-editor.org/rfc/rfc9728.html"
 SPEC_RFC8414 = "https://www.rfc-editor.org/rfc/rfc8414.html"
 
@@ -57,6 +68,14 @@ WELL_KNOWN_PRM = "/.well-known/oauth-protected-resource"
 # `authorization_servers` array, so RFC 8414 3.3 has an observed left-hand side and a
 # slash difference is a real, mechanically detectable MUST violation.
 _R6_UNSPECIFIED_C12 = frozenset({"trailing_slash_only"})
+
+# The OAuth checks that can still convict somebody, and therefore the ones the shared
+# ERROR / NOT_APPLICABLE paths may emit at MUST. C14 left this set on 29 July 2026 when it
+# became descriptive; it is emitted alongside at SHOULD rather than inside the loop,
+# because the strength recorded on an inert path is still the strength the paper's Table 1
+# reports for the check.
+_MUST_STAGES = (CheckId.PRM_PRESENT, CheckId.PRM_RESOURCE_IDENTITY_MATCH,
+                CheckId.AS_CORRESPONDENCE)
 
 
 def canonical_resource_identifier(url: str) -> str:
@@ -355,9 +374,10 @@ async def probe_oauth(
 
     # An access block tells us nothing about the origin (decision rule R4).
     if initial.error_kind is ErrorKind.BLOCKED:
-        for cid in (CheckId.PRM_PRESENT, CheckId.PRM_RESOURCE_IDENTITY_MATCH,
-                    CheckId.AS_CORRESPONDENCE, CheckId.PKCE_DECLARED):
+        for cid in _MUST_STAGES:
             add(cid, Outcome.ERROR, NormativeStrength.MUST, detail="access block (R4)")
+        add(CheckId.PKCE_DECLARED, Outcome.ERROR, NormativeStrength.SHOULD,
+            detail="access block (R4)")
         return checks, ev
 
     ev.requires_authorization = initial.status in (401, 403)
@@ -398,11 +418,13 @@ async def probe_oauth(
             observed_value=urlsplit(resource_url).scheme)
 
     if not ev.requires_authorization:
-        for cid in (CheckId.PRM_PRESENT, CheckId.PRM_RESOURCE_IDENTITY_MATCH,
-                    CheckId.AS_CORRESPONDENCE, CheckId.PKCE_DECLARED):
+        for cid in _MUST_STAGES:
             add(cid, Outcome.NOT_APPLICABLE, NormativeStrength.MUST,
                 detail="authorization is OPTIONAL in MCP and this endpoint did not require it",
                 spec_ref="MCP Authorization", spec_url=SPEC_MCP)
+        add(CheckId.PKCE_DECLARED, Outcome.NOT_APPLICABLE, NormativeStrength.SHOULD,
+            detail="authorization is OPTIONAL in MCP and this endpoint did not require it",
+            spec_ref="MCP Authorization", spec_url=SPEC_MCP)
         return checks, ev
 
     # C07 - discovery hint. Strength is SHOULD until the MCP clause is confirmed, so R1
@@ -481,12 +503,15 @@ async def probe_oauth(
             # Absence we were not allowed to look for is not absence. This leaves the
             # study rather than counting against the operator (denominator rules, R4).
             ev.robots_excluded_urls = list(robots_excluded)
-            for cid in (CheckId.PRM_PRESENT, CheckId.PRM_RESOURCE_IDENTITY_MATCH,
-                        CheckId.AS_CORRESPONDENCE, CheckId.PKCE_DECLARED):
+            for cid in _MUST_STAGES:
                 add(cid, Outcome.ERROR, NormativeStrength.MUST,
                     spec_url=SPEC_RFC9728,
                     observed_value="; ".join(robots_excluded),
                     detail="not observed: excluded by robots.txt (R4, ETHICS.md 6)")
+            add(CheckId.PKCE_DECLARED, Outcome.ERROR, NormativeStrength.SHOULD,
+                spec_url=SPEC_RFC9728,
+                observed_value="; ".join(robots_excluded),
+                detail="not observed: excluded by robots.txt (R4, ETHICS.md 6)")
             return checks, ev
         else:
             add(CheckId.PRM_PRESENT, Outcome.FAIL_UNIMPLEMENTED, NormativeStrength.MUST,
@@ -560,7 +585,7 @@ async def probe_oauth(
     if not ev.authorization_servers:
         add(CheckId.AS_CORRESPONDENCE, Outcome.NOT_APPLICABLE, NormativeStrength.MUST,
             detail="no issuer declared")
-        add(CheckId.PKCE_DECLARED, Outcome.NOT_APPLICABLE, NormativeStrength.MUST,
+        add(CheckId.PKCE_DECLARED, Outcome.NOT_APPLICABLE, NormativeStrength.SHOULD,
             detail="no issuer declared")
         return checks, ev
 
@@ -568,7 +593,6 @@ async def probe_oauth(
     unreachable: list[str] = []
     ambiguous: list[str] = []
     blocked: list[str] = []
-    pkce_seen = False
 
     for issuer in dict.fromkeys(ev.authorization_servers):   # same AS twice = one fetch
         doc = None
@@ -609,8 +633,6 @@ async def probe_oauth(
             mismatches.append(f"{issuer} -> {returned!r} ({relation})")
         elif outcome is Outcome.UNSPECIFIED:
             ambiguous.append(f"{issuer} -> {returned!r} ({relation})")
-        if doc.get("code_challenge_methods_supported"):
-            pkce_seen = True
 
     observed = len(ev.as_documents)
     if mismatches:
@@ -758,15 +780,40 @@ async def probe_oauth(
             spec_url=SPEC_RFC8414,
             observed_value=f"{len(revocable)}/{len(ev.as_documents)}")
 
-        add(
+        # C14 - PKCE advertisement. Descriptive, and the demotion was decided against the
+        # specification text rather than by preference (decision-rules.md R1 log, 29 July
+        # 2026). RFC 8414 2 marks `code_challenge_methods_supported` "OPTIONAL"; RFC 9700
+        # (BCP 240) 2.1.1 is the only document that bridges "MUST support PKCE" to
+        # advertising it, and it sets that bridge at RECOMMENDED -- "Authorization servers
+        # MAY instead provide a deployment-specific way to ensure or determine PKCE
+        # support" -- which a passive prober cannot observe either way. So an absent
+        # element is not evidence that any authorization-server MUST was violated.
+        #
+        # The sentence this check used to cite binds the client: "MCP clients MUST refuse
+        # to proceed." Scoring the server for it is the objection recorded against C16 a
+        # hundred lines above, and it is the objection MCP's Resource Indicators clause was
+        # already rejected for in spec-mapping.md. The one server-binding MUST that exists
+        # (MCP 2025-11-25: "Authorization servers providing OpenID Connect Discovery 1.0
+        # MUST include code_challenge_methods_supported") is absent from 2025-06-18, and R7
+        # scores every endpoint against the most permissive frozen revision.
+        #
+        # Aggregation matches C16-C18 rather than the old "any issuer advertised it":
+        # a resource naming five issuers of which one advertises PKCE has not given its
+        # clients a working choice, and C13 four hundred lines up rejects exactly that
+        # reasoning for exactly that reason.
+        _descriptive(
             CheckId.PKCE_DECLARED,
-            Outcome.PASS if pkce_seen else Outcome.FAIL_UNIMPLEMENTED,
-            NormativeStrength.MUST,
-            spec_ref="MCP: absent code_challenge_methods_supported means clients MUST refuse",
-            spec_url=SPEC_MCP,
+            [issuer for issuer, doc in ev.as_documents.items()
+             if doc.get("code_challenge_methods_supported")],
+            NormativeStrength.SHOULD,
+            spec_ref="RFC 9700 (BCP 240) 2.1.1: publishing "
+                     "code_challenge_methods_supported is RECOMMENDED, and an authorization "
+                     "server MAY instead provide a deployment-specific way to determine "
+                     "PKCE support; RFC 8414 2 marks the element OPTIONAL",
+            spec_url=SPEC_RFC9700,
         )
     else:
-        add(CheckId.PKCE_DECLARED, Outcome.ERROR, NormativeStrength.MUST,
+        add(CheckId.PKCE_DECLARED, Outcome.ERROR, NormativeStrength.SHOULD,
             detail="no authorization server metadata retrievable")
 
     return checks, ev

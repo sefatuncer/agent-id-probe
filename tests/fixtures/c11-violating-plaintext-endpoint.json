@@ -1,0 +1,32 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c11-violating-plaintext-endpoint",
+  "modality": "oauth_metadata",
+  "title": "Endpoint offered over plaintext HTTP",
+  "exercises": {
+    "C11": "violating"
+  },
+  "decision_rules": [],
+  "rationale": "Unreachable in the live corpus because the collectors drop non-HTTPS URLs and count them as `dropped_not_https`. The fixture exists because a branch no data exercises is a branch that can invert without anyone noticing, and this one decides whether a plaintext deployment is recorded as a violation or silently as nothing at all.",
+  "spec": [
+    {
+      "source": "MCP Authorization",
+      "section": "Security Considerations",
+      "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization",
+      "quote": "All authorization server endpoints MUST be served over HTTPS.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    }
+  ],
+  "endpoint": {
+    "url": "http://plaintext.example.org/mcp",
+    "response": {
+      "status": 200
+    }
+  },
+  "documents": [],
+  "expect": {
+    "checks": {
+      "C11": "fail_unimplemented"
+    }
+  }
+}

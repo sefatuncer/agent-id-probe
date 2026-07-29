@@ -1,0 +1,70 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c12-conforming-explicit-default-port",
+  "modality": "oauth_metadata",
+  "title": "Document reflects the resource back with an explicit :443",
+  "exercises": {
+    "C12": "conforming"
+  },
+  "decision_rules": [
+    "R9.2"
+  ],
+  "rationale": "Canonicalising only the expected side dropped a fully conforming server into `unrelated_host`, the heaviest bucket of the taxonomy - a false-positive generator aimed squarely at the headline finding.",
+  "spec": [
+    {
+      "source": "RFC 3986",
+      "section": "6.2.3",
+      "url": "https://www.rfc-editor.org/rfc/rfc3986.html#section-6.2.3",
+      "quote": "the following four URIs are equivalent: http://example.com http://example.com/ http://example.com:/ http://example.com:80/",
+      "verification": "verbatim-verified in docs/spec-mapping.md (docs/decision-rules.md R9.2)"
+    },
+    {
+      "source": "RFC 9728",
+      "section": "3.3",
+      "url": "https://www.rfc-editor.org/rfc/rfc9728.html#section-3.3",
+      "quote": "The `resource` value returned MUST be identical to the protected resource's resource identifier value into which the well-known URI path suffix was inserted to create the URL used to retrieve the metadata. If these values are not identical, the data contained in the response MUST NOT be used.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org:443/mcp",
+        "authorization_servers": [
+          "https://auth.example.org"
+        ]
+      },
+      "comment": "everything but the `resource` value is conforming"
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org",
+        "code_challenge_methods_supported": [
+          "S256"
+        ]
+      },
+      "comment": "conforming, so only C12 is under test"
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C12": "pass",
+      "C05": "pass"
+    },
+    "evidence": {
+      "resource_relation": "identical",
+      "declared_resource": "https://api.example.org:443/mcp"
+    }
+  }
+}

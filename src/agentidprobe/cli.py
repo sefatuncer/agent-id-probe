@@ -1,10 +1,12 @@
 """Command line entry point.
 
-Four verbs, matching the four things a reviewer needs to be able to redo:
+Six verbs, matching the things a reviewer needs to be able to redo:
 
     collect    build the corpus from free registries
     probe      run the measurement, resumable
     summarise  read stored reports and print the funnels
+    rescore    re-score stored artefacts with no network (decision rule R8, leg 2)
+    figures    render Figures 1 and 2, from a run or from the synthetic fixture
     dry-run    probe a handful of endpoints and print everything, no persistence
 
 `probe` is deliberately resumable and deliberately slow. One request per host per
@@ -137,6 +139,43 @@ def _cmd_summarise(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_figures(args: argparse.Namespace) -> int:
+    """Render Figures 1 and 2, from a stored run or from the synthetic fixture.
+
+    `--synthetic` exists so that the figures can be produced with no measurement at all.
+    That is not a convenience: it is how a reader checks the claim in `figures.py` that
+    the plots were designed before the data, since the fixture run and the real run
+    produce the same figure with different numbers in it.
+    """
+    try:
+        from .figures import render_all, synthetic_population
+    except ImportError as exc:                        # pragma: no cover - env-dependent
+        print(f"figures need the optional extra: pip install '.[figures]'  ({exc})",
+              file=sys.stderr)
+        return 2
+
+    root = Path(args.root)
+    if args.synthetic:
+        reports = synthetic_population()
+        out_dir = Path(args.out) if args.out else root / "results" / "figures" / "synthetic"
+    else:
+        if not args.run_id:
+            print("give --run-id, or --synthetic to draw from the fixture", file=sys.stderr)
+            return 2
+        reports = RunStore(root, args.run_id).read_reports()
+        if not reports:
+            print(f"no reports for run {args.run_id}", file=sys.stderr)
+            return 2
+        out_dir = Path(args.out) if args.out else root / "results" / "figures" / args.run_id
+
+    result = render_all(reports, out_dir, formats=tuple(args.format.split(",")),
+                        synthetic=args.synthetic)
+    for path in result["written"]:
+        print(path)
+    print(out_dir / "figure-data.json")
+    return 0
+
+
 async def _cmd_rescore(args: argparse.Namespace) -> int:
     """Decision rule R8, leg 2, as a command a reviewer can run in one line.
 
@@ -247,6 +286,16 @@ def build_parser() -> argparse.ArgumentParser:
     rescore_cmd.add_argument("--verify", action="store_true",
                              help="fail with exit 1 if any verdict changed (decision rule R8)")
     rescore_cmd.set_defaults(func=lambda a: asyncio.run(_cmd_rescore(a)))
+
+    figures_cmd = sub.add_parser(
+        "figures", help="render Figures 1 and 2 (needs the optional 'figures' extra)")
+    figures_cmd.add_argument("--run-id", default=None)
+    figures_cmd.add_argument("--synthetic", action="store_true",
+                             help="draw from the synthetic fixture instead of a run")
+    figures_cmd.add_argument("--out", default=None)
+    figures_cmd.add_argument("--format", default="pdf,png",
+                             help="comma-separated: pdf, png, svg")
+    figures_cmd.set_defaults(func=_cmd_figures)
 
     dry = sub.add_parser("dry-run", help="probe a few URLs and print verdicts, no writes")
     dry.add_argument("urls", nargs="+")

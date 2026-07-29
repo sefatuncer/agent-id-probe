@@ -1,0 +1,69 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c03-violating-key-set-unreachable",
+  "modality": "signed_document",
+  "title": "Signed card whose declared `jku` returns 404",
+  "exercises": {
+    "C03": "violating"
+  },
+  "decision_rules": [
+    "R4"
+  ],
+  "rationale": "A signature whose key cannot be reached is not a verdict about the signature: C04 becomes NOT_APPLICABLE rather than a failure. Collapsing the two would let an outage at a key host be published as a broken signature, and in a positive class of roughly ten endpoints that single confusion would carry the modality's entire result.",
+  "key_provenance": "Card and signature are byte-identical to `c03-c04-c15-conforming-signed-card-verifies`; the only difference is that the `jku` location answers 404. The signature is therefore valid and unverifiable at the same time, which is exactly the state C03 exists to distinguish from a broken one.",
+  "spec": [
+    {
+      "source": "A2A",
+      "section": "8.4",
+      "url": "https://a2a-protocol.org/latest/specification/",
+      "quote": "the Agent Card content MUST be canonicalized using the JSON Canonicalization Scheme (JCS) as defined in RFC 8785",
+      "verification": "UNVERIFIED. docs/spec-mapping.md marks C02/C03/C04 with a warning: the published page truncates 8.4 and these sentences could not be confirmed in an independent round. The fixture therefore pins instrument behaviour, and the anchor must be confirmed before any rate derived from it is published."
+    },
+    {
+      "source": "RFC 7515",
+      "section": "5.2 (Message Signature or MAC Validation)",
+      "url": "https://www.rfc-editor.org/rfc/rfc7515.html#section-5.2",
+      "quote": "If any of the listed steps fails, then the signature or MAC cannot be validated. ... the JWS MUST be considered invalid.",
+      "verification": "paraphrase of RFC 7515 5.2's failure clause, NOT confirmed verbatim. checks_signed.py cites `RFC 7515` without a sentence; confirm before publication."
+    }
+  ],
+  "endpoint": {
+    "url": "https://agent.example.org/.well-known/agent-card.json",
+    "response": {
+      "status": 200,
+      "json": {
+        "name": "Example Agent",
+        "description": "Synthetic A2A Agent Card used only by the R8 conformance pack.",
+        "version": "1.0.0",
+        "protocolVersion": "0.3.0",
+        "url": "https://agent.example.org/a2a",
+        "preferredTransport": "JSONRPC",
+        "signatures": [
+          {
+            "protected": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImFnZW50LWV4YW1wbGUta2V5LTEiLCJqa3UiOiJodHRwczovL2FnZW50LmV4YW1wbGUub3JnLy53ZWxsLWtub3duL2p3a3MuanNvbiJ9",
+            "signature": "TVz5OZxq7S0eUb7a995seTeDLXwN6qv2ayAmNdSSGykjFF6WJUIou_Te1eWIF1lv82EsyarQn-V3ez49TIjMQA",
+            "header": {
+              "kid": "agent-example-key-1"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "documents": [
+    {
+      "url": "https://agent.example.org/.well-known/jwks.json",
+      "status": 404,
+      "comment": "resolved from the `jku` member of the protected header"
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C01": "pass",
+      "C02": "pass",
+      "C03": "fail_unimplemented",
+      "C04": "not_applicable",
+      "C15": "not_applicable"
+    }
+  }
+}

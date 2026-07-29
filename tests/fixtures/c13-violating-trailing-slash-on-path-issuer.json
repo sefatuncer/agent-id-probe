@@ -1,0 +1,71 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c13-violating-trailing-slash-on-path-issuer",
+  "modality": "oauth_metadata",
+  "title": "Path-bearing issuer returns itself with an added terminating slash",
+  "exercises": {
+    "C13": "violating"
+  },
+  "decision_rules": [
+    "R9.3",
+    "R9.4"
+  ],
+  "rationale": "The other half of R9.4 and the reason the asymmetry with C12 is a measurability fact rather than a preference. Here the left-hand side of the comparison is read literally out of the resource's own `authorization_servers` array: nothing is reconstructed, nothing is lost, and the slash difference really does break the client's discovery chain. The instrument previously applied rstrip('/') here, which silently discarded real MUST violations while C12 was penalising the same class.",
+  "spec": [
+    {
+      "source": "RFC 8414",
+      "section": "3.3",
+      "url": "https://www.rfc-editor.org/rfc/rfc8414.html#section-3.3",
+      "quote": "The `issuer` value returned MUST be identical to the authorization server's issuer identifier value into which the well-known URI string was inserted to create the URL used to retrieve the metadata.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    },
+    {
+      "source": "RFC 8414",
+      "section": "4",
+      "url": "https://www.rfc-editor.org/rfc/rfc8414.html#section-4",
+      "quote": "Comparisons between the two strings MUST be performed as a Unicode code-point-to-code-point equality comparison.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org/mcp",
+        "authorization_servers": [
+          "https://auth.example.org/tenant1"
+        ]
+      }
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server/tenant1",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org/tenant1/",
+        "code_challenge_methods_supported": [
+          "S256"
+        ]
+      },
+      "comment": "RFC 8414 3 path-suffixed form for a tenant issuer"
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C13": "fail_misimplemented",
+      "C12": "pass"
+    },
+    "evidence": {
+      "as_issuer_relations": {
+        "https://auth.example.org/tenant1": "trailing_slash_only"
+      }
+    }
+  }
+}

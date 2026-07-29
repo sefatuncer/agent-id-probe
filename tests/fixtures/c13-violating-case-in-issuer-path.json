@@ -1,0 +1,69 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c13-violating-case-in-issuer-path",
+  "modality": "oauth_metadata",
+  "title": "Issuer declared as `/Tenant1` answers as `/tenant1`",
+  "exercises": {
+    "C13": "violating"
+  },
+  "decision_rules": [
+    "R9.2",
+    "R9.3"
+  ],
+  "rationale": "The case edge case R8 names, on the issuer side. Code-point equality with no normalisation is exactly what RFC 8414 4 requires, and a client that case-folded here would accept a token from an issuer it did not select.",
+  "spec": [
+    {
+      "source": "RFC 8414",
+      "section": "4",
+      "url": "https://www.rfc-editor.org/rfc/rfc8414.html#section-4",
+      "quote": "Comparisons between the two strings MUST be performed as a Unicode code-point-to-code-point equality comparison.",
+      "verification": "verbatim-verified in docs/spec-mapping.md"
+    },
+    {
+      "source": "RFC 3986",
+      "section": "6.2.2.1",
+      "url": "https://www.rfc-editor.org/rfc/rfc3986.html#section-6.2.2.1",
+      "quote": "the scheme and host are case-insensitive and therefore should be normalized to lowercase ... The other generic syntax components are assumed to be case-sensitive unless specifically defined otherwise by the scheme.",
+      "verification": "verbatim-verified in docs/spec-mapping.md (docs/decision-rules.md R9.2)"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org/mcp",
+        "authorization_servers": [
+          "https://auth.example.org/Tenant1"
+        ]
+      }
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server/Tenant1",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org/tenant1",
+        "code_challenge_methods_supported": [
+          "S256"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C13": "fail_misimplemented"
+    },
+    "evidence": {
+      "as_issuer_relations": {
+        "https://auth.example.org/Tenant1": "case_path_only"
+      }
+    }
+  }
+}
