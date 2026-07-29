@@ -118,6 +118,24 @@ class SignedEvidence:
         }
 
 
+# The strength of the specification sentence each check rests on, independent of which
+# code path emits it. The access-block and no-card loops used to pass MUST for every check
+# they touched, which recorded C01 at both SHOULD and MUST and C02 -- whose anchor is A2A's
+# OPTIONAL `signatures` member, and which is DESCRIPTIVE_ONLY -- at both MAY and MUST. The
+# verdicts on those paths are ERROR or NOT_APPLICABLE, so R1 never fired and nothing was
+# mis-scored. But the generated check catalogue reads the strength that was actually
+# recorded, so the published artefact claimed two anchors for checks that have one, and a
+# later edit turning either loop into a FAIL_* would have been resting on a MUST that does
+# not exist.
+ANCHOR_STRENGTH: dict[CheckId, NormativeStrength] = {
+    CheckId.IDENTITY_METADATA_PUBLISHED: NormativeStrength.SHOULD,  # A2A: location, not duty
+    CheckId.CARD_SIGNED: NormativeStrength.MAY,                     # `signatures` is OPTIONAL
+    CheckId.KEY_RESOLVABLE: NormativeStrength.MUST,                 # RFC 7515, if signed
+    CheckId.SIGNATURE_VERIFIES: NormativeStrength.MUST,             # RFC 7515, if signed
+    CheckId.KEY_STRENGTH: NormativeStrength.MUST,                   # RFC 7518 / BCP 195
+}
+
+
 def _decode_protected(sig: dict) -> dict | None:
     raw = sig.get("protected")
     if not isinstance(raw, str):
@@ -205,7 +223,7 @@ async def probe_signed(
     if fetched.error_kind is ErrorKind.BLOCKED:
         for cid in (CheckId.IDENTITY_METADATA_PUBLISHED, CheckId.CARD_SIGNED,
                     CheckId.KEY_RESOLVABLE, CheckId.SIGNATURE_VERIFIES, CheckId.KEY_STRENGTH):
-            add(cid, Outcome.ERROR, NormativeStrength.MUST, detail="access block (R4)")
+            add(cid, Outcome.ERROR, ANCHOR_STRENGTH[cid], detail="access block (R4)")
         return checks, ev
 
     # C01 - publishing a card is only SHOULD, so absence is never a failure.
@@ -223,7 +241,7 @@ async def probe_signed(
             detail=f"no usable card (HTTP {fetched.status})")
         for cid in (CheckId.CARD_SIGNED, CheckId.KEY_RESOLVABLE,
                     CheckId.SIGNATURE_VERIFIES, CheckId.KEY_STRENGTH):
-            add(cid, Outcome.NOT_APPLICABLE, NormativeStrength.MUST, detail="no card")
+            add(cid, Outcome.NOT_APPLICABLE, ANCHOR_STRENGTH[cid], detail="no card")
         return checks, ev
 
     ev.document = document

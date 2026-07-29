@@ -79,7 +79,7 @@ Python 3.11+ is the only requirement. No account, no API key, no cloud service.
 git clone https://github.com/sefatuncer/agent-id-probe && cd agent-id-probe
 python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-pytest -q                                          # 165 tests, fully mocked, no network
+pytest -q                                          # 192 tests, fully mocked, no network
 ```
 
 Everything, including the statistics, is standard library plus a short list of pinned
@@ -100,6 +100,11 @@ agent-id-probe probe --run-id trial --limit 50
 
 # 4. Funnels.
 agent-id-probe summarise --run-id trial
+
+# 5. Re-score stored artefacts offline (decision rule R8). Exits non-zero if any verdict
+#    moved. A committed synthetic run ships with the repository, so this works on a fresh
+#    clone before you have measured anything:
+agent-id-probe --root . rescore --run-id example --verify
 ```
 
 ## What a run produces
@@ -126,27 +131,23 @@ never required to satisfy. The authoritative list is the `CheckId` enum in
 `src/agentidprobe/models.py`, and every entry in it is emitted by a code path (there is a
 test that fails if one is not).
 
-| ID | Check | Modality | Anchor |
-|---|---|---|---|
-| C01 | An identity document is served at all | signed | A2A discovery (SHOULD) |
-| C02 | That document carries a JWS signature | signed | A2A (OPTIONAL — descriptive) |
-| C03 | `jku` / `kid` / `did:web` resolves to a usable key | signed | RFC 7515 (MUST, if signed) |
-| C04 | The signature actually verifies | signed | RFC 7515 + RFC 8785 (MUST, if signed) |
-| C05 | RFC 9728 protected-resource metadata reachable | OAuth | MCP (MUST, if authorizing) |
-| C07 | 401 carries `WWW-Authenticate: resource_metadata` | OAuth | MCP — **revision-dependent** |
-| C08 | DPoP / mTLS sender-constraining declared | OAuth | none (descriptive) |
-| C09 | `revocation_endpoint` declared | OAuth | none (descriptive) |
-| C11 | Endpoint TLS is valid | OAuth | MCP + BCP 195 (MUST) |
-| C12 | PRM `resource` matches the resource identifier | OAuth | RFC 9728 §3.3 (MUST) |
-| C13 | Each declared issuer returns that issuer | OAuth | RFC 8414 §3.3 (MUST) |
-| C14 | `code_challenge_methods_supported` present | OAuth | MCP (MUST) |
-| C15 | `alg` / key strength / `kid` resolvable | signed | RFC 7518, BCP 195 (MUST) |
-| C16 | RFC 9207 `iss` support advertised | OAuth | RFC 9700 §2.1 binds the *client* (descriptive) |
-| C17 | Client credentials obtainable without a human | OAuth | MCP registration ladder (descriptive) |
-| C18 | `protected_resources` published (RFC 9728 §4) | OAuth | OPTIONAL (descriptive) |
+**The catalogue is [`docs/check-catalogue.md`](docs/check-catalogue.md), and it is
+generated from the code** — every check, its modality, the strength of the specification
+sentence it rests on, whether it can report a failure at all, and the code paths that emit
+it. `scripts/gen_catalogue.py --check` fails the build if it drifts, and it flags any
+`CheckId` that no code path emits.
 
-C06 and C10 were removed on 2026-07-28: both were declared and never emitted, and C10 had
-no specification to anchor to. The reasoning is in `models.py` and `docs/spec-mapping.md`.
+That machinery exists because the table it replaced was wrong. It listed C06 and C10, both
+of which had been deleted from the instrument, and omitted the eight checks that had been
+added — which is to say it advertised two measurements the study does not make. A
+hand-maintained duplicate of a generated document is the last place that failure can
+recur, so this section no longer contains one.
+
+Why C06 and C10 were deleted, rather than implemented: both were declared, documented, and
+emitted by no code path, and C10 ("the key chains to an organisational trust root") had no
+specification sentence to anchor to. Defining one would have been the authors' rubric,
+which is the objection this design exists to make impossible. See `models.py` and
+[`docs/spec-mapping.md`](docs/spec-mapping.md).
 
 ## Outcome taxonomy
 

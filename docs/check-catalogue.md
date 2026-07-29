@@ -28,8 +28,8 @@ Reading the columns:
 
 | ID | Enum member | Funnel | Strength | Descriptive-only | Spec anchor | Spec URL | Emitted in |
 |---|---|---|---|---|---|---|---|
-| C01 | `IDENTITY_METADATA_PUBLISHED` | `signed_document` | `must`<br>`should` | no | A2A agent discovery: the standard path is /.well-known/agent-card.json<br>A2A agent discovery | https://a2a-protocol.org/latest/topics/agent-discovery/ | `checks_signed.py` x3 |
-| C02 | `CARD_SIGNED` | `signed_document` | `must`<br>`may` | yes | A2A 4.4.7: `signatures` is OPTIONAL; verifiers SHOULD verify one | https://a2a-protocol.org/latest/specification/ | `checks_signed.py` x3 |
+| C01 | `IDENTITY_METADATA_PUBLISHED` | `signed_document` | `should` | no | A2A agent discovery: the standard path is /.well-known/agent-card.json<br>A2A agent discovery | https://a2a-protocol.org/latest/topics/agent-discovery/ | `checks_signed.py` x3 |
+| C02 | `CARD_SIGNED` | `signed_document` | `may` | yes | A2A 4.4.7: `signatures` is OPTIONAL; verifiers SHOULD verify one | https://a2a-protocol.org/latest/specification/ | `checks_signed.py` x3 |
 | C03 | `KEY_RESOLVABLE` | `signed_document` | `must` | no | RFC 8785 number formatting<br>RFC 8785<br>A2A 8.4 key discovery<br>A2A 8.4: a signed card MUST be verifiable against a discoverable key | https://www.rfc-editor.org/rfc/rfc8785.html<br>https://a2a-protocol.org/latest/specification/ | `checks_signed.py` x8 |
 | C04 | `SIGNATURE_VERIFIES` | `signed_document` | `must` | no | RFC 8785 number formatting<br>RFC 7515 + A2A 8.4 (JCS payload)<br>RFC 7515 | https://www.rfc-editor.org/rfc/rfc8785.html<br>https://www.rfc-editor.org/rfc/rfc7515.html | `checks_signed.py` x8 |
 | C05 | `PRM_PRESENT` | `oauth_metadata` | `must` | no | MCP Authorization<br>RFC 9728 3.2<br>MCP: servers MUST implement RFC 9728<br>MCP: PRM MUST include authorization_servers with at least one entry | https://modelcontextprotocol.io/specification/latest/basic/authorization<br>https://www.rfc-editor.org/rfc/rfc9728.html | `checks_oauth.py` x8 |
