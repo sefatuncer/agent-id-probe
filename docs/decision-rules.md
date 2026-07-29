@@ -26,6 +26,11 @@ Bağlayıcı beyan şudur:
 
 ## Değişiklik günlüğü
 
+**Commit `a1408d1` (29 Tem 2026), aşağıdaki 2026-07-28 ve 2026-07-29 tarihli tüm satırları
+kapsar.** O tarihe kadar bu kuralların hiçbiri commit edilmemişti — yani "veriden önce
+donduruldu" ifadesinin arkasında bir zaman damgası yoktu, yalnız bir iddia vardı. Bu
+kaydın kendisi de o commit'te.
+
 | Tarih | Kural | Değişiklik | Gerekçe |
 |---|---|---|---|
 | 2026-07-27 | R1–R8 | İlk dondurma (commit `e27e5dd`) | Pilot sonrası, ana koşudan önce |
