@@ -373,12 +373,12 @@ second scan of several thousand third-party hosts, and what makes re-scoring che
 | `prm_document` | object \| null | The parsed PRM document verbatim |
 | `declared_resource` | string \| null | The document's `resource` member, if it is a string |
 | `expected_resource` | string \| null | What §3.3 says it should have been. **Derived from the URL the document came from, not from the endpoint URL** — see below |
-| `resource_relation` | string \| null | How `declared_resource` misses `expected_resource`. Eight buckets, below |
+| `resource_relation` | string \| null | How `declared_resource` misses `expected_resource`. Nine buckets, below |
 | `authorization_servers` | array of strings | Declared issuers that survived validation: string, `http`/`https` scheme, non-empty authority |
 | `malformed_authorization_servers` | array of strings | Entries that did not, stored as Python `repr()` so the malformation is visible. A bare string here used to be iterated character by character, turning one issuer into fifteen single-letter ones |
 | `as_documents` | object | `issuer → parsed authorization-server metadata document`, for every issuer that answered |
 | `as_errors` | object | `issuer → why no document was obtained`. The key `"<malformed>"` is used when `authorization_servers` was present but not a list |
-| `as_issuer_relations` | object | `issuer → relation` between the `issuer` value the document returned and the issuer string the resource declared. Same eight buckets, plus `"absent"` when the document's `issuer` member is missing or not a string |
+| `as_issuer_relations` | object | `issuer → relation` between the `issuer` value the document returned and the issuer string the resource declared. Same nine buckets, plus `"absent"` when the document's `issuer` member is missing or not a string |
 | `robots_excluded_urls` | array of strings | PRM candidate URLs we did not request because `robots.txt` disallowed them or the operator opted out. **Non-empty with no PRM found ⇒ C05/C12/C13/C14 are all `error`, not failures** — absence we were not allowed to look for is not absence |
 
 **`expected_resource` (R9.1).** RFC 9728 §3.3 does not compare against the endpoint URL the
@@ -402,7 +402,7 @@ dropped, scheme and host lower-cased, root path `/` equated with the empty path.
 query are not lower-cased** — RFC 3986 §6.2.2.1 declares them case-sensitive, so `/MCP` and
 `/mcp` are genuinely different paths.
 
-**`resource_relation` / `as_issuer_relations` — the eight buckets.** `unrelated_host` is a
+**`resource_relation` / `as_issuer_relations` — the nine buckets.** `unrelated_host` is a
 named category, never a fall-through: the paper's rhetorical punch (two unrelated resources
 naming the same issuer) must not be produced by an `else` branch that also swallows port
 differences.
@@ -410,6 +410,7 @@ differences.
 | Bucket | Meaning | C12 | C13 |
 |---|---|---|---|
 | `identical` | Equal after canonicalisation | `pass` | `pass` |
+| `template_placeholder` | The value is the other with whole path segments replaced by `{…}` placeholders — a template, not a URI (R9.6) | **`unspecified`** | **`unspecified`** |
 | `trailing_slash_only` | Differ only by a terminating slash | **`unspecified`** (R9.4) | `fail_misimplemented` |
 | `case_path_only` | Equal ignoring case, but the difference is in the path or query | `fail_misimplemented` | `fail_misimplemented` |
 | `scheme_only` | Same host, different scheme | `fail_misimplemented` | `fail_misimplemented` |

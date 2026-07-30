@@ -17,6 +17,7 @@ published paper gets no such second reading.
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -107,6 +108,44 @@ def test_the_clause_label_matches_an_anchor_the_code_emits(check: CheckId):
         assert token.replace(" ", "") in haystack.replace(" ", ""), (
             f"{check.value}: label cites {token!r} but no emission site does. "
             f"Sites cite: {sorted({e.spec_ref for e in sites})}"
+        )
+
+
+@pytest.mark.parametrize("check", list(CheckId), ids=lambda c: c.value)
+def test_the_clause_label_matches_a_section_the_code_emits(check: CheckId):
+    """The section number, not just the document -- and this is the half that was missing.
+
+    Until 30 July 2026 the test above was the whole guard, and it compared document
+    identifiers only. So Table 1 printed `RFC 9207 §3` for C16 while the code cited §3 as
+    well, and both were wrong: §3 of RFC 9207 introduces
+    `authorization_response_iss_parameter_supported` and states its false-by-default and
+    contains no MUST at all. The obligation is in §2.3. A reviewer following the reference
+    from the table -- or from any stored verdict, since every one of them carries it -- arrived
+    at a section authorising nothing, for the check R11.1 ranks as the first headline
+    candidate.
+
+    A section number is exactly the kind of claim that rots invisibly: it is too small to
+    re-read and too specific to guess, and this repository has now lost three references the
+    same way (a retracted arXiv identifier, an RFC 8414 field that does not exist, and this).
+    So the label's sections must appear at an emission site, mechanically.
+    """
+    label, _ = SPEC_ANCHOR_SUMMARY[check]
+    sections = re.findall(r"§\s*([0-9]+(?:\.[0-9]+)*)", label)
+    if not sections:
+        # Labels such as "RFC 7518" or "MCP Authorization, registration" cite a document
+        # without a section, which the test above already covers. Nothing to check here.
+        return
+
+    sites = _sites(check)
+    haystack = " ".join(f"{e.spec_ref} {e.spec_url}" for e in sites)
+    for section in sections:
+        # An emission site may write the section as prose ("RFC 9207 2.3"), as a fragment
+        # ("#section-2.3") or with the sign ("§2.3"); all three are the same claim.
+        candidates = (f" {section}", f"-{section}", f"§{section}", f"§ {section}")
+        assert any(c in haystack for c in candidates), (
+            f"{check.value}: Table 1 cites section {section!r} of a document that no "
+            f"emission site cites at that section. Sites cite: "
+            f"{sorted({e.spec_ref for e in sites})} / {sorted({e.spec_url for e in sites})}"
         )
 
 

@@ -1,0 +1,220 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "control-google-real-deployment",
+  "modality": "oauth_metadata",
+  "title": "Google's authorization-server metadata is acquitted",
+  "control": {
+    "kind": "real_deployment",
+    "provider": "Google",
+    "captured_at": "2026-07-30",
+    "captured_by": "scripts/capture_deployment_controls.py",
+    "edited": false,
+    "note": "Google serves both well-known forms and the two documents differ in member count, so which one the instrument scores depends on its own candidate order. Both echo the issuer exactly.",
+    "documents": [
+      {
+        "url": "https://accounts.google.com/.well-known/oauth-authorization-server",
+        "status": 200,
+        "sha256": "edba696e159ca4011fa8969bb6b8cc48f92bb614cf8944f0e2c14bb4054ffc5f",
+        "server": "sffe"
+      },
+      {
+        "url": "https://accounts.google.com/.well-known/openid-configuration",
+        "status": 200,
+        "sha256": "f86b185fd428f81d7efaa83ec256693b3abedb57ddfcc6a826f5f396b4827f02",
+        "server": "sffe"
+      }
+    ]
+  },
+  "exercises": {
+    "C13": "conforming"
+  },
+  "decision_rules": [
+    "R4",
+    "R6",
+    "R8",
+    "R9"
+  ],
+  "rationale": "R8 leg 1 requires a conforming and a violating fixture per MUST-level check, and every fixture satisfying it used an RFC 2606 synthetic host -- so the pack demonstrated that the instrument convicts what the specifications forbid and never that it acquits a deployment that is real and correct. That asymmetry is how a false-positive generator survives a green test suite, and this repository has already shipped one: C12's expected value was derived from the wrong URL and reported a 75% violation rate until eight live endpoints were checked by hand. This fixture serves the metadata this provider actually publishes, unedited, and expects the verdict a correct instrument must reach. Google serves both well-known forms and the two documents differ in member count, so which one the instrument scores depends on its own candidate order. Both echo the issuer exactly.",
+  "spec": [
+    {
+      "source": "RFC 8414",
+      "section": "3.3",
+      "url": "https://www.rfc-editor.org/rfc/rfc8414.html#section-3.3",
+      "quote": "The \"issuer\" value returned MUST be identical to the authorization server's issuer identifier value into which the well-known URI string was inserted to create the URL used to retrieve the metadata.  If these values are not identical, the data contained in the response MUST NOT be used.",
+      "verification": "verbatim-verified against rfc-editor.org, 30 July 2026"
+    },
+    {
+      "source": "RFC 8414",
+      "section": "5",
+      "url": "https://www.rfc-editor.org/rfc/rfc8414.html#section-5",
+      "quote": "This backwards-compatible behavior should only be necessary when the well-known URI suffix employed by the application is \"openid-configuration\".",
+      "verification": "verbatim-verified 30 July 2026; the sentence that makes the openid-configuration fallback in `as_metadata_candidate_urls` a specification requirement rather than a convenience, and every control below except Google is reached through it"
+    }
+  ],
+  "endpoint": {
+    "url": "https://resource.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://resource.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://resource.example.org/mcp",
+        "authorization_servers": [
+          "https://accounts.google.com"
+        ]
+      },
+      "provenance": "synthetic: the resource declaration that reaches the issuer"
+    },
+    {
+      "url": "https://accounts.google.com/.well-known/oauth-authorization-server",
+      "status": 200,
+      "json": {
+        "issuer": "https://accounts.google.com",
+        "authorization_endpoint": "https://accounts.google.com/o/oauth2/v2/auth",
+        "device_authorization_endpoint": "https://oauth2.googleapis.com/device/code",
+        "token_endpoint": "https://oauth2.googleapis.com/token",
+        "userinfo_endpoint": "https://openidconnect.googleapis.com/v1/userinfo",
+        "revocation_endpoint": "https://oauth2.googleapis.com/revoke",
+        "jwks_uri": "https://www.googleapis.com/oauth2/v3/certs",
+        "response_types_supported": [
+          "code",
+          "token",
+          "id_token",
+          "code token",
+          "code id_token",
+          "token id_token",
+          "code token id_token",
+          "none"
+        ],
+        "subject_types_supported": [
+          "public"
+        ],
+        "id_token_signing_alg_values_supported": [
+          "RS256"
+        ],
+        "token_endpoint_auth_methods_supported": [
+          "client_secret_post",
+          "client_secret_basic"
+        ],
+        "claims_supported": [
+          "aud",
+          "email",
+          "email_verified",
+          "exp",
+          "family_name",
+          "given_name",
+          "iat",
+          "iss",
+          "name",
+          "picture",
+          "sub"
+        ],
+        "code_challenge_methods_supported": [
+          "plain",
+          "S256"
+        ],
+        "grant_types_supported": [
+          "authorization_code",
+          "refresh_token",
+          "urn:ietf:params:oauth:grant-type:device_code",
+          "urn:ietf:params:oauth:grant-type:jwt-bearer"
+        ],
+        "service_documentation": "https://developers.google.com/identity/protocols/oauth2",
+        "response_modes_supported": [
+          "query",
+          "fragment",
+          "form_post"
+        ],
+        "authorization_response_iss_parameter_supported": true,
+        "op_policy_uri": "https://developers.google.com/terms/api-services-user-data-policy",
+        "op_tos_uri": "https://developers.google.com/terms"
+      },
+      "provenance": "captured verbatim 2026-07-30; sha256 edba696e159ca4011fa8969bb6b8cc48f92bb614cf8944f0e2c14bb4054ffc5f"
+    },
+    {
+      "url": "https://accounts.google.com/.well-known/openid-configuration",
+      "status": 200,
+      "json": {
+        "issuer": "https://accounts.google.com",
+        "authorization_endpoint": "https://accounts.google.com/o/oauth2/v2/auth",
+        "device_authorization_endpoint": "https://oauth2.googleapis.com/device/code",
+        "token_endpoint": "https://oauth2.googleapis.com/token",
+        "userinfo_endpoint": "https://openidconnect.googleapis.com/v1/userinfo",
+        "revocation_endpoint": "https://oauth2.googleapis.com/revoke",
+        "jwks_uri": "https://www.googleapis.com/oauth2/v3/certs",
+        "response_types_supported": [
+          "code",
+          "token",
+          "id_token",
+          "code token",
+          "code id_token",
+          "token id_token",
+          "code token id_token",
+          "none"
+        ],
+        "response_modes_supported": [
+          "query",
+          "fragment",
+          "form_post"
+        ],
+        "subject_types_supported": [
+          "public"
+        ],
+        "id_token_signing_alg_values_supported": [
+          "RS256"
+        ],
+        "scopes_supported": [
+          "openid",
+          "email",
+          "profile"
+        ],
+        "token_endpoint_auth_methods_supported": [
+          "client_secret_post",
+          "client_secret_basic"
+        ],
+        "claims_supported": [
+          "aud",
+          "email",
+          "email_verified",
+          "exp",
+          "family_name",
+          "given_name",
+          "iat",
+          "iss",
+          "name",
+          "picture",
+          "sub"
+        ],
+        "code_challenge_methods_supported": [
+          "plain",
+          "S256"
+        ],
+        "grant_types_supported": [
+          "authorization_code",
+          "refresh_token",
+          "urn:ietf:params:oauth:grant-type:device_code",
+          "urn:ietf:params:oauth:grant-type:jwt-bearer"
+        ],
+        "authorization_response_iss_parameter_supported": true
+      },
+      "provenance": "captured verbatim 2026-07-30; sha256 f86b185fd428f81d7efaa83ec256693b3abedb57ddfcc6a826f5f396b4827f02"
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C13": "pass",
+      "C12": "pass",
+      "C05": "pass"
+    },
+    "evidence": {
+      "as_issuer_relations": {
+        "https://accounts.google.com": "identical"
+      }
+    }
+  }
+}

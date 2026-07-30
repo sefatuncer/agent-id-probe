@@ -239,7 +239,7 @@ separated. C14 is therefore reported as prevalence, like C16–C18.
 | C02 | Is the card signed | OPTIONAL for the publisher in A2A |
 | C08 | Is DPoP / mTLS declared | Neither MCP nor RFC 9449 requires it |
 | C09 | Is `revocation_endpoint` declared | No specification asks that an agent identity be revocable |
-| **C16** | Is RFC 9207 `iss` support declared | The obligation is **on the client** (BCP 240 §2.1); a passive probe cannot see the client |
+| **C16** | Is RFC 9207 `iss` support declared | RFC 9207 **§2.3** does bind the **server** — *"The server **MUST** indicate its support for the `iss` parameter by setting the metadata parameter … to true"* — but **conditionally**, on *"Authorization servers supporting this specification"*. An absent flag therefore means "does not support", which nothing forbids. (This row said the obligation was on the client until 30 July 2026; the amendment of 29 July had already corrected the bound party to the server and this table was not updated with it. The section number was also wrong everywhere — **§3**, which contains no MUST at all.) |
 | **C17** | Can a client identity be bootstrapped (CIMD ∨ DCR) | The MCP registration ladder ends at "ask the user"; none of it is mandatory |
 | **C18** | Is `protected_resources` published | **OPTIONAL** in RFC 9728 §4 |
 

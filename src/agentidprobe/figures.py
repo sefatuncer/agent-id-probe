@@ -202,7 +202,7 @@ CHAIN: tuple[ChainStep, ...] = (
         node="Token request",
         detail="the client now trusts an issuer it could not verify",
         edge="6.  authorize",
-        clause="RFC 9207 §3: support for `iss` MUST be advertised in that metadata; "
+        clause="RFC 9207 §2.3: support for `iss` MUST be advertised in that metadata; "
               "RFC 9728 §4 `protected_resources` is OPTIONAL",
         binds="authorization server",
         # C14 was listed here until 29 July 2026, under a clause string citing RFC 9207 and

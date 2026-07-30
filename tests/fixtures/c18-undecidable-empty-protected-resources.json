@@ -1,0 +1,67 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c18-undecidable-empty-protected-resources",
+  "modality": "oauth_metadata",
+  "title": "The issuer declares `protected_resources` and leaves it empty",
+  "exercises": {
+    "C18": "undecidable"
+  },
+  "decision_rules": [
+    "R1",
+    "R6",
+    "R8",
+    "R11"
+  ],
+  "rationale": "An empty array is a declared member that enumerates nothing, so RFC 9728 7.6's cross-check stays exactly as impossible as if the member were absent -- and counting it as \"publishes\" inflated C18, R11.1's rank-2 headline candidate. That defect was found by running the code on 29 July 2026 and fixed with no fixture to hold it down, which is how it would come back: `if isinstance(resources, list)` is the natural way to write this check and it is the wrong way. The empty case is still counted separately as `empty_list`, because \"declared the member and left it empty\" is a different observation from \"never declared it\" and the difference is worth a number in its own right.",
+  "spec": [
+    {
+      "source": "RFC 9728",
+      "section": "4",
+      "url": "https://www.rfc-editor.org/rfc/rfc9728.html#section-4",
+      "quote": "protected_resources\n      OPTIONAL.  JSON array containing a list of resource identifiers for OAuth protected resources that can be used with this authorization server.",
+      "verification": "verbatim-verified against rfc-editor.org, 28 July 2026. \"a list of resource identifiers\" is what an empty array does not contain."
+    },
+    {
+      "source": "RFC 9728",
+      "section": "7.6",
+      "url": "https://www.rfc-editor.org/rfc/rfc9728.html#section-7.6",
+      "quote": "Secure determination of appropriate authorization servers to use with a protected resource for all use cases is out of scope for this specification.",
+      "verification": "verbatim-verified against rfc-editor.org; the cross-check an empty list cannot serve"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org/mcp",
+        "authorization_servers": [
+          "https://auth.example.org"
+        ]
+      }
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org",
+        "protected_resources": []
+      }
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C05": "pass",
+      "C12": "pass",
+      "C13": "pass",
+      "C18": "unspecified"
+    }
+  }
+}

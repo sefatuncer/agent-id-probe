@@ -156,14 +156,23 @@ SPEC_ANCHOR_SUMMARY: dict[CheckId, tuple[str, BoundParty]] = {
     CheckId.AS_CORRESPONDENCE: ("RFC 8414 §3.3", BoundParty.AUTHORIZATION_SERVER),
     CheckId.PKCE_DECLARED: ("RFC 9700 §2.1.1; RFC 8414 §2", BoundParty.AUTHORIZATION_SERVER),
     CheckId.KEY_STRENGTH: ("RFC 7518", BoundParty.CARD_PUBLISHER),
-    # RFC 9207 §3 binds the authorization server -- "the authorization server MUST
-    # indicate its support for the iss parameter" -- and that is the sentence governing
-    # the thing this check observes. RFC 9700 §2.1's REQUIRED binds the client and is
+    # RFC 9207 §2.3 binds the authorization server -- "The server MUST indicate its support
+    # for the iss parameter by setting the metadata parameter
+    # authorization_response_iss_parameter_supported ... to true" -- and that is the sentence
+    # governing the thing this check observes. RFC 9700 §2.1's REQUIRED binds the client and is
     # the motivation, not the anchor. Recorded as CLIENT until 29 July 2026, when the
     # Figure 1 cross-check caught the disagreement; the paper's §2 already said this.
-    # It stays descriptive regardless: RFC 9207 §3's MUST is conditional on supporting
-    # the parameter, so an absent flag means "does not support", which nothing forbids.
-    CheckId.ISS_PARAMETER_DECLARED: ("RFC 9207 §3", BoundParty.AUTHORIZATION_SERVER),
+    #
+    # The section was §3 until 30 July 2026, here and at the emission site and in the
+    # amendment log. §3 introduces the parameter and states its false-by-default and contains
+    # no MUST whatsoever, so the label named a clause that authorises nothing -- in the row a
+    # reviewer checks first, for R11.1's rank-1 headline candidate. Nothing caught it because
+    # the Table 1 cross-check compared document identifiers only; it now compares sections too.
+    #
+    # It stays descriptive regardless: §2.3's MUST is conditional on "Authorization servers
+    # supporting this specification", so an absent flag means "does not support", which
+    # nothing forbids.
+    CheckId.ISS_PARAMETER_DECLARED: ("RFC 9207 §2.3", BoundParty.AUTHORIZATION_SERVER),
     CheckId.CLIENT_BOOTSTRAP_DECLARED: ("MCP Authorization, registration",
                                         BoundParty.CLIENT),
     CheckId.PROTECTED_RESOURCES_DECLARED: ("RFC 9728 §4", BoundParty.AUTHORIZATION_SERVER),

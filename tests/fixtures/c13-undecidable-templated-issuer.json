@@ -1,0 +1,76 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c13-undecidable-templated-issuer",
+  "modality": "oauth_metadata",
+  "title": "The authorization server returns a templated issuer instead of an identifier",
+  "exercises": {
+    "C13": "undecidable"
+  },
+  "decision_rules": [
+    "R6",
+    "R8",
+    "R9"
+  ],
+  "rationale": "R9.6, held down on a synthetic host so that the rule survives independently of any provider's document. `control-microsoft-entra-common-template-issuer` records the live instance this class was discovered from, but a captured document drifts -- providers edit their metadata -- and a rule whose only test is a capture is a rule that can be silently retired by someone else's deployment change. Two fixtures, one purpose: the control proves the class occurs in the wild, this one proves the instrument classifies it. Both matter, because the verdict before R9.6 existed was `same_host_different_path` -> FAIL_MISIMPLEMENTED, i.e. a MUST-level violation written against a deployment that is documented, deliberate and conforming on every tenant-specific path it serves.",
+  "spec": [
+    {
+      "source": "RFC 8414",
+      "section": "3.3",
+      "url": "https://www.rfc-editor.org/rfc/rfc8414.html#section-3.3",
+      "quote": "The \"issuer\" value returned MUST be identical to the authorization server's issuer identifier value into which the well-known URI string was inserted to create the URL used to retrieve the metadata.  If these values are not identical, the data contained in the response MUST NOT be used.",
+      "verification": "verbatim-verified against rfc-editor.org, 30 July 2026. This is the sentence R9.6 declines to apply here, and the reason is in its own wording: it compares against \"the authorization server's issuer identifier value\", and a value carrying a placeholder is not one."
+    },
+    {
+      "source": "RFC 8414",
+      "section": "2",
+      "url": "https://www.rfc-editor.org/rfc/rfc8414.html#section-2",
+      "quote": "issuer\n      REQUIRED.  The authorization server's issuer identifier, which is a URL that uses the \"https\" scheme and has no query or fragment components.",
+      "verification": "verbatim-verified against rfc-editor.org, 30 July 2026. RFC 3986 §2 admits neither `{` nor `}` in a URI, so a templated value does not satisfy this definition -- the document is not conforming authorization-server metadata, but neither is it a mismatched identifier, and R6 assigns that gap to us rather than to the operator."
+    },
+    {
+      "source": "RFC 3986",
+      "section": "2",
+      "url": "https://www.rfc-editor.org/rfc/rfc3986.html#section-2",
+      "quote": "A URI is composed from a limited set of characters consisting of digits, letters, and a few graphic symbols.",
+      "verification": "verbatim-verified against rfc-editor.org, 30 July 2026; `{` and `}` are outside that set and appear in no production of the URI grammar"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org/mcp",
+        "authorization_servers": [
+          "https://auth.example.org/shared/v2"
+        ]
+      }
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server/shared/v2",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org/{tenantid}/v2"
+      }
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C05": "pass",
+      "C12": "pass",
+      "C13": "unspecified"
+    },
+    "evidence": {
+      "as_issuer_relations": {
+        "https://auth.example.org/shared/v2": "template_placeholder"
+      }
+    }
+  }
+}

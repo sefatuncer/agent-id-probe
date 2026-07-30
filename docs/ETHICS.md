@@ -141,6 +141,33 @@ reported. Otherwise our own politeness policy would move the published rate. The
 applies when an operator's `robots.txt` blocks an issuer's metadata: we record that we could
 not observe it, and we never write it up as that operator's specification violation.
 
+### 6.1 The cost of this policy is large, specific, and known in advance
+
+Measured on 30 July 2026, while capturing the real-deployment control fixtures:
+
+| Platform | `robots.txt` | Consequence |
+|---|---|---|
+| **Okta** (tenant, e.g. `*.okta.com`) | `User-agent: * ` / `Disallow: /` | **Every Okta tenant is excluded.** No verdict about any of them is observable |
+| **Auth0** (tenant, e.g. `login.auth0.com`) | `User-agent: * ` / `Disallow: /` | **Every Auth0 tenant is excluded.** (The apex `auth0.com` permits crawling but serves no metadata — 404 — so it is a marketing site, not an authorization server) |
+| Google, Microsoft Entra, GitHub, GitLab | permit the well-known paths | Observable; captured as controls |
+
+Two of the most widely deployed hosted identity platforms are therefore **invisible to this
+instrument by our own choice**, and this is disclosed here rather than discovered later for
+three reasons:
+
+1. It is not a defect and will not be "fixed". R4 forbids writing our politeness policy up as
+   the operator's failure, and overriding a blanket `Disallow` because we judge our request
+   harmless is precisely the reasoning this section exists to refuse.
+2. **It biases the study's own headline.** Issuer concentration is a quantity we report, and
+   MCP servers are more likely to delegate to a hosted platform than to run their own
+   authorization server. The issuers we cannot see are disproportionately the ones that
+   matter, so every rate conditioned on observed issuer documents (C13, C16–C18) is
+   conditioned on a **non-random** subset. That belongs in Limitations, and it is written
+   there — not left as an unexplained gap between "declared" and "observed" denominators.
+3. **No control fixture for either platform can exist.** A reviewer comparing the control set
+   against the list of large IdPs will notice the two absences; the reason is recorded in
+   `scripts/capture_deployment_controls.py` next to the evidence rather than in prose alone.
+
 ## 7. Identification and opt-out
 
 - Every request carries an identifying `User-Agent` with a live URL.

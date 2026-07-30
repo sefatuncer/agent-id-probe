@@ -1,0 +1,86 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c16-c17-c18-conforming-every-issuer-declares",
+  "modality": "oauth_metadata",
+  "title": "Every declared issuer advertises iss support, client bootstrap and protected_resources",
+  "exercises": {
+    "C16": "conforming",
+    "C17": "conforming",
+    "C18": "conforming"
+  },
+  "decision_rules": [
+    "R1",
+    "R8",
+    "R11"
+  ],
+  "rationale": "C16, C17 and C18 are the first, fifth and second ranked headline candidates in R11.1, and until 30 July 2026 not one of the thirty fixtures touched any of them. That is the worst place in the pack for a gap: R11 selects the headline mechanically from whichever candidate passes the variance test, so an aggregation defect in these three would not be caught by a reviewer reading the number -- it would be selected *as* the number, with a clean transcript. Two of the three have already had exactly such a defect (C16 counted an unreachable issuer toward PASS; C18 counted an empty list as published), and both were found by running the code rather than by any test. This fixture pins the positive case for all three at once, which is possible because all three read from the same document.",
+  "spec": [
+    {
+      "source": "RFC 9207",
+      "section": "2.3",
+      "url": "https://www.rfc-editor.org/rfc/rfc9207.html#section-2.3",
+      "quote": "The server MUST indicate its support for the iss parameter by setting the metadata parameter authorization_response_iss_parameter_supported, defined in Section 3, to true.",
+      "verification": "verbatim-verified against rfc-editor.org, 30 July 2026. C16 is DESCRIPTIVE_ONLY notwithstanding this MUST: the obligation is conditioned on \"Authorization servers supporting this specification\", so an absent flag means the server does not support the parameter, which nothing forbids. Section 3 -- cited here until 30 July 2026 -- contains no MUST; it only defines the parameter and its false default."
+    },
+    {
+      "source": "RFC 9728",
+      "section": "4",
+      "url": "https://www.rfc-editor.org/rfc/rfc9728.html#section-4",
+      "quote": "protected_resources\n      OPTIONAL.  JSON array containing a list of resource identifiers for OAuth protected resources that can be used with this authorization server.",
+      "verification": "verbatim-verified against rfc-editor.org; corrected 28 July 2026 from an earlier claim in spec-mapping.md that RFC 8414 defined no such field"
+    },
+    {
+      "source": "MCP Authorization, revision 2025-06-18",
+      "section": "Dynamic Client Registration",
+      "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization",
+      "quote": "Prompt the user to enter the client information if no other option is available.",
+      "verification": "verbatim-verified 29 July 2026; the last rung of the registration ladder, and the one an autonomous agent cannot climb. C17 is DESCRIPTIVE_ONLY because no rung of the ladder is mandatory."
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {}
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org/mcp",
+        "authorization_servers": [
+          "https://auth.example.org"
+        ]
+      }
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org",
+        "authorization_response_iss_parameter_supported": true,
+        "registration_endpoint": "https://auth.example.org/register",
+        "protected_resources": [
+          "https://api.example.org/mcp"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C05": "pass",
+      "C12": "pass",
+      "C13": "pass",
+      "C16": "pass",
+      "C17": "pass",
+      "C18": "pass"
+    },
+    "evidence": {
+      "as_issuer_relations": {
+        "https://auth.example.org": "identical"
+      }
+    }
+  }
+}

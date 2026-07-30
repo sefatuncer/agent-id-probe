@@ -300,6 +300,98 @@ def test_fixture_ids_are_unique() -> None:
     assert len(set(FIXTURE_IDS)) == len(FIXTURE_IDS)
 
 
+# --- real-deployment negative controls ----------------------------------------
+
+CONTROL_PREFIX = "control-"
+CONTROLS: list[dict] = [f for f in FIXTURE_DATA if f["id"].startswith(CONTROL_PREFIX)]
+CONTROL_IDS: list[str] = [f["id"] for f in CONTROLS]
+
+
+def test_the_pack_contains_real_deployment_controls() -> None:
+    """Every fixture written before 30 July 2026 used an RFC 2606 synthetic host.
+
+    That made the pack one-sided in a way a passing suite cannot reveal: it demonstrated
+    that the instrument convicts what the specifications forbid, and never once that it
+    acquits a deployment that is real and correct. A false-positive generator survives that
+    suite untouched, and this repository has shipped one -- C12's expected value was
+    reconstructed from the wrong URL and reported a 75% violation rate, found by hand-checking
+    eight live endpoints rather than by any test here.
+
+    The count is derived from the directory rather than asserted as a number, for the reason
+    given at the top of this module: a literal here would be a second copy of a fact the
+    filenames already state. `paper/05-results.md` reads it the same way.
+    """
+    assert CONTROLS, (
+        "no real-deployment control fixtures. The pack cannot show the instrument acquits a "
+        "correct deployment, which is the half of validity R8 leg 1 does not reach."
+    )
+
+
+@pytest.mark.parametrize("fixture", CONTROLS, ids=CONTROL_IDS)
+def test_control_fixture_records_its_provenance(fixture: dict) -> None:
+    """A captured document is evidence only if it says where and when it came from.
+
+    Without this block a control is indistinguishable from a synthetic fixture that happens
+    to name a real company -- and the difference is the entire value of the control. The
+    SHA-256 is what separates a *stale* capture from an *edited* one when a reviewer
+    re-fetches: providers do add members to their metadata, so drift is expected and
+    silent editing is not.
+    """
+    control = fixture.get("control")
+    assert control, f"{fixture['id']} is named as a control but carries no `control` block"
+    assert control["kind"] == "real_deployment"
+    for field in ("provider", "captured_at", "captured_by", "note"):
+        assert str(control.get(field, "")).strip(), f"control block is missing {field}"
+    assert control["edited"] is False, (
+        "a control fixture must serve the bytes the provider published; an edited document "
+        "proves nothing about a real deployment"
+    )
+    assert control["documents"], "a control must record the locations it captured"
+    # Every candidate location the instrument would try, answered or not. A control that
+    # recorded only the successful URL would skip the candidate walk, and which candidate
+    # answers decides which document gets scored: three of the five providers captured on
+    # 30 July 2026 serve nothing at RFC 8414's own path form.
+    for document in control["documents"]:
+        assert document["url"].startswith("https://")
+        assert document["status"] is not None or document.get("sha256") is None
+    captured_urls = {d["url"] for d in control["documents"]}
+    served_urls = {d["url"] for d in fixture["documents"]}
+    assert captured_urls <= served_urls, (
+        f"{fixture['id']} records captures it does not serve: {captured_urls - served_urls}"
+    )
+    for document in fixture["documents"]:
+        assert document.get("provenance", "").strip(), (
+            f"{fixture['id']}: document {document['url']} does not say whether it was "
+            f"captured or synthesised"
+        )
+
+
+@pytest.mark.parametrize("fixture", CONTROLS, ids=CONTROL_IDS)
+def test_a_control_never_accuses_a_named_provider(fixture: dict) -> None:
+    """A control fixture may claim `conforming` or `undecidable`, never `violating`.
+
+    Controls are the only fixtures that name a real, identifiable third party, and a
+    `violating` control would be this repository asserting -- in a test that runs green
+    forever afterwards -- that a named company breaches a specification at MUST level. That
+    claim may well be true one day, and it still must not arrive as a side effect of somebody
+    adding a fixture: R1 already refuses to let the *instrument* convict without a MUST-level
+    anchor, and this is the same guard one layer out, where the cost of being wrong is not a
+    bad number but a false accusation.
+
+    The Microsoft `/common` document is exactly the case that makes the rule necessary. It
+    returns a literal `{tenantid}` placeholder where RFC 8414 §3.3 requires an identical
+    issuer identifier, and the first instinct -- recorded in the notes as option (a), "a real
+    violation, report it as one" -- would have published that. R9.6 routes it to UNSPECIFIED
+    instead, and this test is what stops the instinct returning.
+    """
+    for check_value, case in fixture["exercises"].items():
+        assert case != "violating", (
+            f"{fixture['id']} claims {check_value} is violated by "
+            f"{fixture['control']['provider']}. If that is really the finding it belongs in "
+            f"the paper with an argument, not in a fixture."
+        )
+
+
 # --- R8 leg 1, enforced -------------------------------------------------------
 
 

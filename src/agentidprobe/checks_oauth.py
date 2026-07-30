@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit, urlunsplit
 
@@ -68,6 +69,69 @@ WELL_KNOWN_PRM = "/.well-known/oauth-protected-resource"
 # `authorization_servers` array, so RFC 8414 3.3 has an observed left-hand side and a
 # slash difference is a real, mechanically detectable MUST violation.
 _R6_UNSPECIFIED_C12 = frozenset({"trailing_slash_only"})
+
+# Relations routed to UNSPECIFIED in *both* checks, because what they describe is not a
+# difference between two identifiers but the absence of an identifier on one side.
+_R6_UNSPECIFIED_BOTH = frozenset({"template_placeholder"})
+
+# A single `{...}` path segment, RFC 6570 template syntax. RFC 3986 §2 does not admit `{`
+# or `}` anywhere in a URI, so a value containing one is not a URI and therefore cannot be
+# the "issuer identifier, which is a URL" that RFC 8414 §2 defines.
+_TEMPLATE_SEGMENT = re.compile(r"\{[^{}/]*\}")
+
+
+def _is_template_of(candidate: str, concrete: str) -> bool:
+    """Is `candidate` `concrete` with one or more path segments replaced by a placeholder?
+
+    Decision rule R9.6, and the reason it exists is a live deployment rather than a
+    hypothetical. `https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration`
+    answers with
+
+        "issuer": "https://login.microsoftonline.com/{tenantid}/v2.0"
+
+    -- a literal brace placeholder. Compared as a URI that is `same_host_different_path`,
+    which R9.3 maps to `FAIL_MISIMPLEMENTED`, so before this function existed the instrument
+    wrote a MUST-level violation against the largest identity provider on the internet. The
+    same host's tenant-specific documents echo their issuer exactly (verified live against
+    `/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0/`), so the provider is not misimplementing
+    anything; the multi-tenant document is a different artefact that Microsoft documents as
+    such -- *"Microsoft Entra ID exposes tenant-independent versions of the OIDC document …
+    These endpoints return an issuer value, which is a template parametrized by the
+    `tenantid`"* -- served at the location RFC 8414 reserves for one server's metadata.
+
+    So the comparison RFC 8414 §3.3 asks for is not failed here, it is **ill-posed**: §3.3
+    compares against "the authorization server's issuer identifier value", and neither side of
+    this document claims to be one. R6 says our own inability to decide is UNSPECIFIED, and
+    R9.3 says every distinguishable class gets its own name rather than falling into a heavier
+    bucket -- which is exactly the pair of rules that already produced `trailing_slash_only`.
+
+    Detection is syntactic and vendor-neutral, deliberately: a host allowlist would be the
+    hand-written rubric R10.2 was rewritten to eliminate. The test is that the returned value
+    is a template *of the identifier we asked for* -- same scheme, authority, query and
+    segment count, differing only in whole segments that are placeholders. A value carrying
+    braces that is not such a template is a genuine mismatch and keeps its ordinary relation,
+    because then the two values differ in more than the parametrised part.
+    """
+    if "{" not in candidate:
+        return False
+    c, k = urlsplit(candidate), urlsplit(concrete)
+    if (c.scheme, c.netloc, c.query) != (k.scheme, k.netloc, k.query):
+        return False
+    c_segments, k_segments = c.path.split("/"), k.path.split("/")
+    if len(c_segments) != len(k_segments):
+        return False
+    substituted = False
+    for c_segment, k_segment in zip(c_segments, k_segments, strict=True):
+        if _TEMPLATE_SEGMENT.fullmatch(c_segment):
+            # A placeholder standing in for an empty segment substitutes nothing, so the
+            # value is not a template of this identifier.
+            if not k_segment:
+                return False
+            substituted = True
+            continue
+        if c_segment != k_segment:
+            return False
+    return substituted
 
 # The OAuth checks that can still convict somebody, and therefore the ones the shared
 # ERROR / NOT_APPLICABLE paths may emit at MUST. C14 left this set on 29 July 2026 when it
@@ -144,6 +208,13 @@ def _relation(declared: str, expected: str) -> str:
 
     if declared == expected:
         return "identical"
+    # Before every URI-shaped comparison below, because a value carrying a brace placeholder
+    # is not a URI and scoring it as one convicts a documented multi-tenant deployment of a
+    # MUST violation (R9.6). Both directions are tested: C13 meets the template on the
+    # returned side and C12 would meet it on the declared side, and a taxonomy that named the
+    # class in only one check would be the C12/C13 asymmetry defect over again.
+    if _is_template_of(declared, expected) or _is_template_of(expected, declared):
+        return "template_placeholder"
     if declared.rstrip("/") == expected.rstrip("/"):
         return "trailing_slash_only"
     # Scheme and host case is already normalised away above (RFC 3986 6.2.2.1), so what
@@ -177,6 +248,11 @@ def _identity_outcome(relation: str, *, expectation_is_observed: bool) -> Outcom
     """
     if relation == "identical":
         return Outcome.PASS
+    # R9.6. Unlike `trailing_slash_only` this one does not depend on which side was observed:
+    # the ambiguity is in the *document*, not in our reconstruction of what to compare it
+    # against, so it applies to C12 and C13 alike.
+    if relation in _R6_UNSPECIFIED_BOTH:
+        return Outcome.UNSPECIFIED
     if not expectation_is_observed and relation in _R6_UNSPECIFIED_C12:
         return Outcome.UNSPECIFIED
     return Outcome.FAIL_MISIMPLEMENTED
@@ -779,9 +855,24 @@ async def probe_oauth(
             [issuer for issuer, doc in ev.as_documents.items()
              if doc.get("authorization_response_iss_parameter_supported") is True],
             NormativeStrength.SHOULD,
-            spec_ref="RFC 9207 3: the server MUST advertise iss support in its metadata; "
-                     "RFC 9700 (BCP 240) 2.1 makes a mix-up defence REQUIRED of the client",
-            spec_url="https://www.rfc-editor.org/rfc/rfc9207.html")
+            # Section 2.3, not 3. Section 3 introduces the parameter and says only "Boolean
+            # parameter indicating whether the authorization server provides the iss
+            # parameter ... If omitted, the default value is false" -- no MUST at all. The
+            # sentence this check is about is in 2.3: "The server MUST indicate its support
+            # for the iss parameter by setting the metadata parameter
+            # authorization_response_iss_parameter_supported ... to true." Both this
+            # spec_ref and the R9/C16 amendment log cited 3, and every stored verdict carries
+            # the reference, so a reviewer following it landed on a section containing no
+            # obligation -- the same defect that pinned SPEC_MCP to a dated revision.
+            #
+            # The strength stays SHOULD, and the corrected citation is why: 2.3's MUST is
+            # conditioned on "Authorization servers supporting this specification", so an
+            # absent flag means "does not support", which no specification forbids.
+            spec_ref="RFC 9207 2.3: a server supporting the specification MUST indicate its "
+                     "support by setting authorization_response_iss_parameter_supported to "
+                     "true; RFC 9700 (BCP 240) 2.1 makes a mix-up defence REQUIRED of the "
+                     "client",
+            spec_url="https://www.rfc-editor.org/rfc/rfc9207.html#section-2.3")
 
         # C17 - can a client obtain credentials without a human? MCP's registration
         # ladder ends at "Prompt the user to enter the client information if no other
@@ -821,8 +912,18 @@ async def probe_oauth(
                 for r in resources
             )
         ]
+        # All observed issuers, not any of them. The amendment log for 29 July 2026 records
+        # C14's aggregation being changed to "all declared issuers, matching C16-C18" -- but
+        # C18 was `if listed`, i.e. any, so the document described a rule the code did not
+        # run. The denominator is `observed` rather than `declared` because R11.5 fixes it
+        # there for C18 alone: the question is what a *reachable* issuer chose to publish,
+        # and an issuer that never answered cannot publish anything.
+        #
+        # This changes only the endpoint-level verdict, which R11.5 makes the *secondary*
+        # number; the headline C18 rate is computed per issuer in `analysis.py` from the
+        # stored documents and is unaffected either way.
         add(CheckId.PROTECTED_RESOURCES_DECLARED,
-            Outcome.PASS if listed else Outcome.UNSPECIFIED,
+            Outcome.PASS if listed and len(listed) == observed else Outcome.UNSPECIFIED,
             NormativeStrength.MAY,
             spec_ref="RFC 9728 4: `protected_resources` is OPTIONAL; 7.6 recommends "
                      "cross-checking the two lists but puts AS selection out of scope",

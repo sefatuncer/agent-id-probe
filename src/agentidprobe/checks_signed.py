@@ -35,6 +35,11 @@ from .models import CheckId, CheckResult, NormativeStrength, Outcome
 SPEC_A2A = "https://a2a-protocol.org/latest/specification/"
 SPEC_A2A_DISCOVERY = "https://a2a-protocol.org/latest/topics/agent-discovery/"
 SPEC_RFC7515 = "https://www.rfc-editor.org/rfc/rfc7515.html"
+# C04 is the only check here whose MUST comes from a specific clause rather than the document
+# as a whole, so it deep-links: 5.2 "Message Signature or MAC Validation" is where "at least
+# one JWS Signature value MUST successfully validate, or the JWS MUST be considered invalid"
+# lives, and every stored C04 verdict carries the URL a reviewer will follow.
+SPEC_RFC7515_VALIDATION = "https://www.rfc-editor.org/rfc/rfc7515.html#section-5.2"
 SPEC_RFC8785 = "https://www.rfc-editor.org/rfc/rfc8785.html"
 SPEC_DIDWEB = "https://w3c-ccg.github.io/did-method-web/"
 
@@ -343,16 +348,27 @@ async def probe_signed(
 
     # C04 - the headline. A signature that does not verify is a MUST violation of
     # RFC 7515; a signature we could not reach a key for is not the operator's verdict.
+    #
+    # The section is 5.2, "Message Signature or MAC Validation", and until 30 July 2026 the
+    # emission sites cited RFC 7515 with no section at all while the paper's Table 1 asserted
+    # "RFC 7515 5.2" by hand. The label was right and the code was vague, which is the same
+    # defect as the reverse: nothing tied the reference a reviewer follows to the reference the
+    # data carries. 5.2 is the clause that makes this check failable at MUST -- "in all cases,
+    # at least one JWS Signature value MUST successfully validate, or the JWS MUST be
+    # considered invalid" -- so it is the one both must name.
     if verified_any:
         add(CheckId.SIGNATURE_VERIFIES, Outcome.PASS, NormativeStrength.MUST,
-            spec_ref="RFC 7515 + A2A 8.4 (JCS payload)", spec_url=SPEC_RFC7515,
+            spec_ref="RFC 7515 5.2 + A2A 8.4 (JCS payload)",
+            spec_url=SPEC_RFC7515_VALIDATION,
             observed_value=f"{ev.verified_count}/{len(ev.signatures)} verified")
     elif not resolved_any:
         add(CheckId.SIGNATURE_VERIFIES, Outcome.NOT_APPLICABLE, NormativeStrength.MUST,
             detail="no key could be resolved, so the signature cannot be judged")
     else:
         add(CheckId.SIGNATURE_VERIFIES, Outcome.FAIL_MISIMPLEMENTED, NormativeStrength.MUST,
-            spec_ref="RFC 7515", spec_url=SPEC_RFC7515,
+            spec_ref="RFC 7515 5.2: at least one JWS Signature value MUST successfully "
+                     "validate, or the JWS MUST be considered invalid",
+            spec_url=SPEC_RFC7515_VALIDATION,
             detail="key resolved but no signature verified over the JCS payload")
 
     # C15

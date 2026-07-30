@@ -8,7 +8,12 @@ the same host) that a coarse equality test would either forgive or lump together
 import httpx
 import respx
 
-from agentidprobe.checks_oauth import canonical_resource_identifier, probe_oauth
+from agentidprobe.checks_oauth import (
+    _identity_outcome,
+    _relation,
+    canonical_resource_identifier,
+    probe_oauth,
+)
 from agentidprobe.config import MeasurementConfig, RatePolicy
 from agentidprobe.fetcher import ErrorKind, Fetcher, FetchResult
 from agentidprobe.models import CheckId, Outcome
@@ -527,3 +532,103 @@ async def test_www_authenticate_hint_is_followed_first():
         checks, ev = await probe_oauth(f, RESOURCE, initial)
     assert ev.prm_url == hinted
     assert _outcome(checks, CheckId.WWW_AUTH_RESOURCE_METADATA) is Outcome.PASS
+
+
+# --- R9.6: the templated-issuer class -----------------------------------------
+#
+# These are written as a table over `_relation` rather than as probe runs because the
+# boundary is the whole point, and a probe run can only show one side of it. Defect D7,
+# reported on 30 July 2026, is exactly this failure: the issuer-rejection tests pinned only
+# the *rejecting* direction, so an implementation that also rejected legitimate values passed
+# the entire suite. A forgiving rule needs its refusals pinned harder than its acceptances --
+# `template_placeholder` routes to UNSPECIFIED, so every case it wrongly claims is a
+# MUST-level violation the instrument silently stops reporting.
+
+
+def test_a_templated_issuer_is_its_own_relation_class():
+    """The live case: Microsoft's tenant-independent document, reduced to its comparison.
+
+    Before R9.6 this was `same_host_different_path`, which R9.3 maps to FAIL_MISIMPLEMENTED
+    -- a MUST-level violation written against the largest identity provider on the internet,
+    for a document it publishes deliberately and documents as a template.
+    """
+    for requested in (
+        "https://login.microsoftonline.com/common/v2.0",
+        "https://login.microsoftonline.com/organizations/v2.0",
+        "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0",
+    ):
+        relation = _relation("https://login.microsoftonline.com/{tenantid}/v2.0", requested)
+        assert relation == "template_placeholder", requested
+        # Both checks, because the ambiguity is in the document rather than in C12's
+        # reconstruction of what to compare against (R9.4 does not apply).
+        assert _identity_outcome(relation, expectation_is_observed=True) is Outcome.UNSPECIFIED
+        assert _identity_outcome(relation, expectation_is_observed=False) is Outcome.UNSPECIFIED
+
+
+def test_a_placeholder_does_not_excuse_a_real_mismatch():
+    """What R9.6 must refuse, or it becomes a way to launder any mismatch through a brace.
+
+    Each of these carries a placeholder *and* a difference the placeholder does not account
+    for, so the value is not a template of the identifier that was requested and the ordinary
+    taxonomy applies. If any of them were forgiven, an endpoint could evade the study's
+    decisive measurement by returning `{anything}` -- and the evasion would read as our own
+    declared uncertainty.
+    """
+    cases = {
+        # A different host is a different host, brace or no brace.
+        ("https://evil.example.com/{tenantid}/v2.0",
+         "https://login.microsoftonline.com/common/v2.0"): "unrelated_host",
+        # Substituting the placeholder still does not produce the requested path.
+        ("https://login.microsoftonline.com/{tenantid}/v9.9",
+         "https://login.microsoftonline.com/common/v2.0"): "same_host_different_path",
+        # One placeholder cannot stand in for two segments: segment counts differ.
+        ("https://h.example.com/{a}", "https://h.example.com/x/y"): "same_host_different_path",
+        # A placeholder substituting an empty segment substitutes nothing.
+        ("https://h.example.com/{a}/", "https://h.example.com//"): "same_host_different_path",
+        # A brace inside a segment is not a whole-segment placeholder.
+        ("https://h.example.com/tenant{id}", "https://h.example.com/tenant7"):
+            "same_host_different_path",
+        # R9.3 names the heaviest differing component on the same host, scheme first, so
+        # this stays `scheme_only` even though the path differs too. The assertion that
+        # matters is the verdict below, not which of the two names it carries.
+        ("http://h.example.com/{a}/v2", "https://h.example.com/x/v2"): "scheme_only",
+    }
+    for (returned, requested), expected in cases.items():
+        relation = _relation(returned, requested)
+        assert relation == expected, f"{returned} vs {requested} -> {relation}"
+        assert _identity_outcome(
+            relation, expectation_is_observed=True
+        ) is Outcome.FAIL_MISIMPLEMENTED
+
+
+def test_the_existing_taxonomy_is_unchanged_by_r9_6():
+    """R9.6 inserts a branch ahead of every URI-shaped comparison, so the classes it sits in
+    front of are asserted here rather than trusted."""
+    assert _relation(ISSUER, ISSUER) == "identical"
+    assert _relation("https://h.example.com/mcp/", "https://h.example.com/mcp") \
+        == "trailing_slash_only"
+    assert _relation("https://h.example.com/MCP", "https://h.example.com/mcp") \
+        == "case_path_only"
+    assert _relation("https://a.example.com/mcp", "https://b.example.com/mcp") \
+        == "unrelated_host"
+    assert _relation("https://x.a.example.com/mcp", "https://a.example.com/mcp") \
+        == "related_host"
+
+
+@respx.mock
+async def test_c12_routes_a_templated_resource_to_unspecified():
+    """The C12 side of R9.6, which no fixture reaches.
+
+    A protected resource returning a templated `resource` member is far less likely than a
+    multi-tenant authorization server returning a templated `issuer`, but the code path is
+    shared and a taxonomy that named the class in only one of the two checks is precisely the
+    C12/C13 asymmetry defect that R9 was written to close.
+    """
+    _no_robots("https://api.example.org", "https://auth.example.org")
+    respx.get(PRM_URL).mock(return_value=httpx.Response(200, json={
+        "resource": "https://api.example.org/{tenant}", "authorization_servers": [ISSUER]}))
+    respx.get(AS_URL).mock(return_value=httpx.Response(200, json={"issuer": ISSUER}))
+    async with Fetcher(FAST) as f:
+        checks, ev = await probe_oauth(f, "https://api.example.org/mcp", _initial())
+    assert ev.resource_relation == "template_placeholder"
+    assert _outcome(checks, CheckId.PRM_RESOURCE_IDENTITY_MATCH) is Outcome.UNSPECIFIED

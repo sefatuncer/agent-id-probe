@@ -66,6 +66,12 @@ only one a reader can check.*
 | 2026-07-29 | **Funnel** | **`FUNNEL_OAUTH` now ends at C13**; it has four stages | A descriptive check cannot be a funnel stage that narrows on `PASS`: `runner.summarise()` would keep a non-advertising endpoint in the denominator and never in the numerator, which is the composition-as-failure error that produced the 36.7% vs 96.6% gap. The funnel now terminates where the paper's thesis does, at issuer correspondence |
 | 2026-07-29 | **C14 aggregation** | "any declared issuer advertised it" → **all declared issuers**, matching C16–C18 | C14 was the only funnel-stage check with an undeclared aggregation rule, and it used the most permissive one available. C13 four hundred lines away rejects exactly that reasoning: *"a resource that names five issuers of which four are dead is the thesis in miniature."* R11.5 fixed this for C16–C18 and had no C14 row |
 | 2026-07-29 | **C16 bound party** | Recorded as binding the **client**; corrected to the **authorization server** | RFC 9207 §3 — *"the authorization server MUST indicate its support for the `iss` parameter"* — is the sentence governing what C16 observes; RFC 9700 §2.1's REQUIRED binds the client and is the motivation, not the anchor. The paper's §2 already said this. C16 stays descriptive: RFC 9207 §3's MUST is conditional on supporting the parameter, so an absent flag means "does not support", which nothing forbids. Found by the Figure 1 ↔ Table 1 cross-check, not by reading |
+| 2026-07-30 | **R9.6** | **New** — `template_placeholder` is a ninth relation class and is `UNSPECIFIED` in **both** C12 and C13 | The first real authorization-server metadata ever run through the instrument produced it. Microsoft's tenant-independent document returns `"issuer": "https://login.microsoftonline.com/{tenantid}/v2.0"`, a literal RFC 6570 placeholder, which the taxonomy classified as `same_host_different_path` → **`FAIL_MISIMPLEMENTED`**: a MUST-level violation published against the largest identity provider on the internet, in the check that is half the decisive measurement, weighted by an issuer concentration this study reports. It is not a violation — RFC 8414 §2 requires the `issuer` to be a **URL**, RFC 3986 §2 admits no braces, and Microsoft documents the endpoint as tenant-independent with substitution prescribed *instead of* exact match — so §3.3's comparison is ill-posed rather than failed, and R6 assigns that to us. The same host's tenant-specific document echoes its issuer byte for byte (captured as a control), which is what makes this a statement about one document rather than about the provider |
+| 2026-07-30 | **R9.3 / R9.5** | The taxonomy has **nine** classes, not eight; `template_placeholder` does **not** enter the R9.5 sensitivity pair | The pair exists for classes where a defensible reading would convict; here no reading convicts, because the compared value is not an identifier. Counted and reported as its own quantity instead |
+| 2026-07-30 | **C16 anchor** | Section reference corrected **§3 → §2.3**; `spec_url` now deep-links | RFC 9207 **§3 contains no MUST** — it defines the parameter and its false-by-default and nothing else. The sentence C16 is about is in **§2.3**: *"The server **MUST** indicate its support for the `iss` parameter by setting the metadata parameter `authorization_response_iss_parameter_supported` … to true."* Both the emitted `spec_ref` and the 2026-07-29 amendment row cited §3, and **every stored verdict carries the reference**, so a reviewer following it from the data landed on a section stating no obligation — the identical defect that pinned `SPEC_MCP` to a dated revision. The strength stays `SHOULD`, and the corrected citation is *why*: §2.3's MUST is conditioned on *"Authorization servers supporting this specification"*, so an absent flag means "does not support", which nothing forbids |
+| 2026-07-30 | **C18 aggregation** | Endpoint-level verdict `any observed issuer` → **all observed issuers**, which is what the 2026-07-29 row already claimed | That row recorded C14 being changed to *"all declared issuers, **matching C16–C18**"*, but C18 was `if listed` — the document described a rule the code did not run, in R11.1's rank-2 headline candidate. The denominator stays `observed` rather than `declared` because R11.5 fixes it there for C18 alone. Affects only the secondary number: R11.5 makes the headline C18 rate per-issuer, computed in `analysis.py` from the stored documents, and that was already correct |
+| 2026-07-30 | **R8 leg 1** | **Real-deployment negative controls added** to `tests/fixtures/` (five providers, documents captured verbatim, provenance and SHA-256 recorded) | All thirty prior fixtures used RFC 2606 synthetic hosts, so the pack proved the instrument **convicts** what the specifications forbid and never once that it **acquits** a deployment that is real and correct. A false-positive generator survives that suite untouched, and this repository has shipped one: C12's expected value was reconstructed from the wrong URL and reported a 75% violation rate, caught by hand-checking eight live endpoints rather than by any test. The controls found R9.6 on their first run. A control may claim `conforming` or `undecidable` and **never** `violating` — enforced by a test — because a control is the only fixture that names an identifiable third party |
+| 2026-07-30 | **Scope / R4** | Recorded: **Okta and Auth0 tenants serve `User-agent: * / Disallow: /`**, so no verdict about either platform is observable to this instrument | Verified live against a trial Okta tenant and `login.auth0.com` on 2026-07-30. Our own robots policy (`ETHICS.md` §6) therefore excludes two of the most widely deployed hosted identity platforms; they leave every denominator as `ERROR` rather than scoring. This is not a defect to fix — R4 forbids writing our politeness policy up as the operator's failure — but it biases **issuer concentration** against exactly the platforms MCP servers are most likely to delegate to, and no control fixture for either can exist. Belongs in Limitations, and is written there |
 | 2026-07-29 | **R7 revision set** | **MCP revision 2026-07-28 added** to the frozen set, and `draft-mcguinness-oauth-rfc9728bis-01` declared as a sensitivity arm | A revision shipped the day before the run — the exact event R7 was written to catch. It states *"Authorization servers should return the `iss` parameter per RFC 9207, and clients must validate it before redeeming a code"*, which makes C16 the ecosystem's newly-mandated control rather than a curiosity and lowers R11.3's "C16 may stick at 100%" risk; and it **formally deprecates Dynamic Client Registration in favour of CIMD**, which is C17's population. Separately, the rfc9728bis draft would relax the identical-match rule C12 and R9 rest on to same-origin plus path-prefix. It is not adopted, so the frozen anchor holds, but a rule this study depends on being under active revision must be declared rather than discovered by a reviewer |
 | 2026-07-29 | **Request scope** | Declared issuers are fetched only over `https` to a public registrable domain, and **at most 10 per endpoint** | `authorization_servers` is an arbitrary-length list written by the measured party; the loop iterated all of it at up to three candidate URLs each, with no host restriction. A document declaring 200 issuers commanded 600 requests aimed wherever it chose, and plain HTTP, loopback and RFC 1918 targets were accepted — from a residential line. The bounds published in `README.md` and `ETHICS.md` §10 were therefore false and have been rewritten to what the code enforces. Issuers we decline to request are recorded as declared and scored as our uncertainty (R6), never as the operator's non-conformance (R4) |
 | 2026-07-29 | **Spec URLs** | `SPEC_MCP` pinned from `/latest/` to the dated **2025-06-18** revision; every fixture repinned | R7 freezes the revision set by date precisely so a specification published on the day of the run cannot be swallowed silently — and `/latest/` now resolves to **2026-07-28**, outside the frozen set, which moved the authorization text onto sub-pages. Every stored verdict records this URL, so an unpinned anchor meant a reviewer following the link from the data found a page without the quoted sentence |
@@ -344,6 +350,7 @@ these outcomes:
 | Relation | C12 | C13 | Basis |
 |---|---|---|---|
 | `identical` | `PASS` | `PASS` | — |
+| `template_placeholder` | **`UNSPECIFIED`** | **`UNSPECIFIED`** | **R9.6 — the compared value is not a URI, so §3.3's comparison is ill-posed rather than failed** |
 | `trailing_slash_only` | **`UNSPECIFIED`** | `FAIL_MISIMPLEMENTED` | **R9.4 — the asymmetry comes from the specification, not from a choice** |
 | `case_path_only` | `FAIL_MISIMPLEMENTED` | `FAIL_MISIMPLEMENTED` | RFC 3986 §6.2.2.1: path/query are **case-sensitive**; `/MCP` ≠ `/mcp` |
 | `scheme_only` | `FAIL_MISIMPLEMENTED` | `FAIL_MISIMPLEMENTED` | §3.3; also MCP *"endpoints **MUST** be served over HTTPS"* |
@@ -400,6 +407,71 @@ violation a class the instrument cannot distinguish.
 
 Classes such as `case_path_only` and `port_only` do not enter the sensitivity pair: they are
 real differences remaining after canonicalisation, not ambiguity.
+
+### R9.6 — A templated identifier is its own class, and it is `UNSPECIFIED` in both checks
+
+**Added 30 July 2026, from a live document rather than from reasoning.** The first real
+authorization-server metadata ever run through this instrument produced it. Microsoft's
+tenant-independent document at
+`login.microsoftonline.com/common/v2.0/.well-known/openid-configuration` answers:
+
+```json
+"issuer": "https://login.microsoftonline.com/{tenantid}/v2.0"
+```
+
+Compared as a URI that is `same_host_different_path`, which R9.3 maps to
+`FAIL_MISIMPLEMENTED`. So the instrument, unamended, would have published **a MUST-level
+violation against the largest identity provider on the internet** — and C13 is half the
+decisive measurement, while issuer concentration is a quantity this study reports, which means
+the largest providers weight the result most.
+
+**Why this is not a violation.** RFC 8414 §3.3 compares the returned value against *"the
+authorization server's **issuer identifier** value into which the well-known URI string was
+inserted"*. Two things have to hold for that comparison to have a left-hand side, and neither
+does:
+
+1. **The returned value is not a URI.** RFC 8414 §2 defines `issuer` as *"the authorization
+   server's issuer identifier, which is a **URL**"*, and RFC 3986 §2 admits neither `{` nor
+   `}` anywhere in the URI grammar. So the document is not conforming authorization-server
+   metadata — but it is also not a *mismatched identifier*, which is the only thing §3.3
+   knows how to be violated by.
+2. **The publisher does not claim it is one.** Microsoft documents the endpoint as
+   tenant-independent: *"Microsoft Entra ID exposes tenant-independent versions of the OIDC
+   document … These endpoints return an issuer value, which is a template parametrized by the
+   `tenantid`"*, and prescribes substitution **instead of** the exact match OpenID Connect
+   Core requires. It is metadata for a *family* of issuers, served at the location RFC 8414
+   reserves for one.
+
+**And the provider is measurably not misimplementing.** The control fixtures capture the same
+host answering for a concrete tenant
+(`/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0/`) and it echoes its issuer byte for byte. The
+templated document is a separate, deliberate artefact, not a broken one.
+
+**So R6 applies:** our own inability to decide is `UNSPECIFIED`, and R9.3's rule that *every
+distinguishable class gets its own name* gives it `template_placeholder` rather than letting it
+fall into a heavier bucket. This is the same construction that produced `trailing_slash_only`,
+with one difference: `trailing_slash_only` is ambiguous because **our reconstruction** of the
+expected value is lossy, so R9.4 confines it to C12. Here the ambiguity is in **the document**,
+so it applies to C12 and C13 alike.
+
+**Detection is syntactic and vendor-neutral**, which is not a stylistic choice: a host
+allowlist would be the hand-written rubric R10.2 was rewritten to eliminate, and it would make
+the rule silently wrong for every other multi-tenant platform. The test is that the value is a
+template *of the identifier that was requested* — same scheme, authority and query, the same
+number of path segments, differing only in whole segments that are `{…}` placeholders standing
+in for non-empty segments. A value carrying a brace that is **not** such a template keeps its
+ordinary relation and its ordinary verdict, because then the two differ in more than the
+parametrised part. Both directions are pinned in `tests/test_checks_oauth.py`: a forgiving rule
+needs its refusals tested harder than its acceptances, since every case it wrongly forgives is
+a violation the study stops reporting.
+
+**What is reported.** Not a violation count but a count of this class, and the attribution
+matters: the party that turned a documented template into a broken discovery chain is **the
+resource server that named it in `authorization_servers`**, not the provider. A conforming MCP
+client reaching that document *must discard it* (§3.3: *"the data contained in the response
+**MUST NOT** be used"*), and the only way to use it is a vendor-specific substitution rule that
+no MCP revision mentions. That is a concrete, citable harm — reachable without accusing anyone
+of non-conformance — and the paper's §8 has been short of exactly one of those.
 
 ---
 
@@ -519,7 +591,7 @@ collection:
 
 | Rank | Quantity | Normative anchor | Why this rank |
 |---|---|---|---|
-| **1** | **C16** — how many declared issuers advertise support for RFC 9207 `iss` | RFC 9700 (BCP 240) §2.1: *"When an OAuth client can interact with more than one authorization server, a defense against mix-up attacks … is **REQUIRED**"* + RFC 9207 §3: the server **MUST** advertise its support | The strongest anchor. The obligation is the client's, but its **availability** is observed on the server side; with no advertisement a conforming client must assume `false`, so the defence is effectively absent |
+| **1** | **C16** — how many declared issuers advertise support for RFC 9207 `iss` | RFC 9700 (BCP 240) §2.1: *"When an OAuth client can interact with more than one authorization server, a defense against mix-up attacks … is **REQUIRED**"* + RFC 9207 §2.3: the server **MUST** advertise its support | The strongest anchor. The obligation is the client's, but its **availability** is observed on the server side; with no advertisement a conforming client must assume `false`, so the defence is effectively absent |
 | **2** | **C18** — how many authorization servers publish `protected_resources`, and whether the cross-check passes for those that do | RFC 9728 §4 (OPTIONAL) + the §7.6 cross-check recommendation | The deployed availability of the only mitigation §7.6 recommends |
 | **3** | Issuer concentration + cross-operator delegation rate | None — pure topology | Needs no anchor, cannot be a rubric, variance is close to guaranteed |
 | **4** | **C12/C13** conformance rates | RFC 9728 §3.3, RFC 8414 §3.3 (MUST) | The anchor is strong, but the variance may be low and it is open to contamination by known SDK bugs (the R10 stratification is mandatory) |
@@ -602,7 +674,7 @@ same way — the list **cannot be extended after** collection.
 | Cross-operator delegation rate (apex proxy) | §5 |
 | `shared_across_apexes` — two or more unrelated apexes declaring the same issuer URL | §5 |
 | **Distribution of `hint_rejected_reason`** | **§5, its own subsection** — see below |
-| Distribution of the `resource_relation` taxonomy (the eight buckets of R9.3) | §6 (Failure classes) |
+| Distribution of the `resource_relation` taxonomy (the nine buckets of R9.3) | §6 (Failure classes) |
 | Distribution of `as_issuer_relations` | §6 |
 | `empty_list` (C18) | §6 |
 | Count of `malformed_authorization_servers` | §6 |

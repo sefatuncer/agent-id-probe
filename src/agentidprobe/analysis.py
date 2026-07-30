@@ -662,7 +662,14 @@ def issuer_rate(
 
 
 def _advertises_iss(doc: dict | None) -> bool:
-    """C16 -- RFC 9207 §3. An unreachable issuer advertises nothing (R11.5)."""
+    """C16 -- RFC 9207 §2.3. An unreachable issuer advertises nothing (R11.5).
+
+    §2.3 carries the obligation ("The server MUST indicate its support for the iss parameter
+    by setting the metadata parameter ... to true"); §3, cited here until 30 July 2026, only
+    defines the parameter and its false-by-default. The flag read below is the same either
+    way, but the rate this function feeds is R11.1's rank-1 headline candidate, so the
+    citation attached to it is the one a reviewer checks.
+    """
     return bool(doc) and doc.get("authorization_response_iss_parameter_supported") is True
 
 
