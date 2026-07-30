@@ -609,6 +609,71 @@ def test_endpoints_with_no_resolvable_apex_each_count_as_their_own_operator():
     assert len({e.endpoint_id for e in chosen}) == 5
 
 
+# --- a response that never ends must not hold the run -------------------------
+
+
+async def test_an_endless_response_hits_a_total_deadline_rather_than_holding_a_worker():
+    """The third finding of the 30 July 2026 rehearsal, and the one specific to MCP.
+
+    httpx applies its `read` timeout per read operation. MCP's streamable-HTTP transport
+    answers GET with `text/event-stream`, so a conforming server may hold the response open
+    and emit a keepalive every few seconds; each one resets the timeout and `client.get()`
+    never returns. `max_response_bytes` cannot help — it slices `response.content` after the
+    body is read in full, which for a stream is never.
+
+    Two of 200 endpoints did this and held their workers for over 35 minutes while the other
+    198 finished in twelve. At census scale that is around ninety endpoints against eight
+    workers, and the run would not have terminated on any predictable schedule.
+
+    The endpoint here is a conforming MCP server, not a broken one, so the deadline is
+    recorded as our limit — TIMEOUT, therefore ERROR under R4 — and R5's second run re-asks.
+    """
+    config = MeasurementConfig(rate=RatePolicy(
+        per_host_requests_per_second=1000.0, max_retries=0, backoff_base_s=0.0,
+        total_request_timeout_s=0.5))
+
+    async def never_ends(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(30)          # longer than any patience the run can afford
+        return httpx.Response(200, json={})
+
+    transport = httpx.MockTransport(never_ends)
+    async with Fetcher(config) as f:
+        f._client = httpx.AsyncClient(transport=transport)
+        result = await asyncio.wait_for(f.fetch("https://stream-example.org/mcp"), timeout=10)
+
+    assert result.status is None
+    assert result.error_kind is ErrorKind.TIMEOUT
+    assert "total deadline" in result.error_detail, result.error_detail
+
+
+async def test_a_robots_txt_that_never_ends_cannot_hold_an_origin_hostage():
+    """The worse half of the same defect, found while writing the test above.
+
+    `_robots_for` calls the client directly instead of going through `_request_with_retry`,
+    so it inherited no deadline at all. It also runs before every gate and once per new
+    origin, which means a single origin whose `robots.txt` trickles forever would hold a
+    worker indefinitely and no endpoint on that origin could ever be reached — a denial of
+    service we would be performing on ourselves, one worker at a time.
+
+    A `robots.txt` we cannot read means no rules, which is what every other failure on this
+    path already resolves to.
+    """
+    config = MeasurementConfig(rate=RatePolicy(
+        per_host_requests_per_second=1000.0, max_retries=0, backoff_base_s=0.0,
+        total_request_timeout_s=0.5))
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            await asyncio.sleep(30)
+        return httpx.Response(401, headers={"www-authenticate": "Bearer"})
+
+    async with Fetcher(config) as f:
+        f._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        result = await asyncio.wait_for(f.fetch("https://slow-robots-example.org/mcp"), 10)
+
+    assert result.status == 401, "the endpoint must still be reached once robots gives up"
+
+
 # --- the per-host ceiling must not become silent data loss --------------------
 
 

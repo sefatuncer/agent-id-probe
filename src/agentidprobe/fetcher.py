@@ -264,7 +264,16 @@ class Fetcher:
                 self._host_requests[robots_host] = self._host_requests.get(robots_host, 0) + 1
                 lock = await self._throttle.acquire(robots_host)
                 try:
-                    resp = await self._client.get(f"{origin}/robots.txt")
+                    # The same total deadline as every other request, and this path needs
+                    # it more: it does not go through `_request_with_retry`, so until
+                    # 30 July 2026 it had no bound of any kind beyond httpx's per-read
+                    # timeout. It also runs before every gate, once per new origin, so one
+                    # origin whose `robots.txt` trickles forever would hold a worker
+                    # indefinitely and no endpoint on that origin could ever be reached.
+                    # A robots.txt we could not read means no rules, which is what the
+                    # handler below already does with every other failure.
+                    async with asyncio.timeout(self.config.rate.total_request_timeout_s):
+                        resp = await self._client.get(f"{origin}/robots.txt")
                 finally:
                     self._throttle.release(robots_host, lock)
                 if resp.status_code == 200 and len(resp.content) < 512_000:
@@ -463,7 +472,33 @@ class Fetcher:
 
         for attempt in range(rate.max_retries + 1):
             try:
-                response = await self._client.get(url)
+                # A total deadline, because httpx's `read` timeout is per read operation
+                # and this instrument sends GET to MCP endpoints.
+                #
+                # The streamable-HTTP transport answers GET with `text/event-stream`, so a
+                # conforming MCP server may hold the response open indefinitely and emit a
+                # keepalive every few seconds. Each keepalive resets the read timeout, so
+                # `client.get()` never returns; `max_response_bytes` cannot help because it
+                # slices `response.content` *after* the body has been read in full, which
+                # for a stream is never. Two of the 200 endpoints in the 30 July 2026
+                # rehearsal did exactly this and held their workers for over 35 minutes
+                # while the other 198 finished in twelve. At census scale that is roughly
+                # ninety endpoints, each occupying one of eight workers until killed, and
+                # the run would not have terminated on any predictable schedule.
+                #
+                # This is not an exotic host. It is the protocol behaving as specified, met
+                # by a client that asked the wrong question, so the deadline is recorded as
+                # our limit (TIMEOUT, hence ERROR under R4) and never as the operator's
+                # fault. R5's second run re-asks, which is the correct treatment for a
+                # verdict we could not obtain.
+                async with asyncio.timeout(rate.total_request_timeout_s):
+                    response = await self._client.get(url)
+            except TimeoutError as exc:
+                last_kind = ErrorKind.TIMEOUT
+                last_error = (f"exceeded the {rate.total_request_timeout_s}s total deadline "
+                              f"for one request: {exc}" if str(exc) else
+                              f"exceeded the {rate.total_request_timeout_s}s total deadline "
+                              f"for one request")
             except httpx.TimeoutException as exc:
                 last_kind, last_error = ErrorKind.TIMEOUT, str(exc)
             except httpx.ConnectError as exc:

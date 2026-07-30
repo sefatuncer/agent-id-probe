@@ -35,6 +35,13 @@ class RatePolicy:
     global_concurrency: int = 8
     connect_timeout_s: float = 10.0
     read_timeout_s: float = 20.0
+    # A ceiling on one whole request, which the two above do not provide: httpx applies
+    # `read` per read operation, so a response that keeps trickling never times out. MCP's
+    # streamable-HTTP transport answers GET with an event stream, so this is ordinary
+    # conforming behaviour rather than a pathological host -- see `_request_with_retry`.
+    # 45s leaves room for a slow but real answer (connect 10 + read 20 nominal) while
+    # bounding the case that does not end.
+    total_request_timeout_s: float = 45.0
     max_retries: int = 2
     backoff_base_s: float = 2.0
     max_response_bytes: int = 5 * 1024 * 1024
