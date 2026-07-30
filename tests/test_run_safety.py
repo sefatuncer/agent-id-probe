@@ -434,3 +434,41 @@ async def test_a_redirect_cannot_walk_out_of_the_public_web():
         assert not any(bad in u for u in seen
                        for bad in ("127.0.0.1", "169.254", "10.0.0.5")), target
         assert not ev.as_documents, f"a refused redirect produced evidence: {target}"
+
+
+@respx.mock
+async def test_the_per_host_ceiling_does_not_truncate_the_corpus():
+    """A safeguard that shrinks the population it protects is worse than none.
+
+    The per-host ceiling added on 30 July 2026 counted the registry too. `collect`
+    paginates one host several hundred times by design, so the 31st page returned
+    OUT_OF_SCOPE, the collector saw a non-200 and stopped, and the census ended at roughly
+    three thousand records with a single line in the manifest to say so. The exemption is
+    `Scope.unmetered_hosts` and it lifts the aggregate count only -- the throttle, robots,
+    the opt-out list and the failure budget all still apply to those hosts.
+    """
+    from agentidprobe.collectors import McpOfficialRegistry
+
+    pages = {"n": 0}
+    total = FAST.rate.max_requests_per_host * 3        # comfortably past the ceiling
+
+    def page(request):
+        pages["n"] += 1
+        last = pages["n"] >= total
+        return httpx.Response(200, json={
+            "servers": [{"name": f"io.github.x/s{pages['n']}",
+                         "remotes": [{"url": f"https://h{pages['n']}-example.org/mcp"}]}],
+            "metadata": {} if last else {"next_cursor": f"c{pages['n']}"},
+        })
+
+    respx.get(url__regex=r".*/robots\.txt").mock(return_value=httpx.Response(404))
+    respx.get(url__regex=r"https://registry\.modelcontextprotocol\.io/v0/servers.*").mock(
+        side_effect=page)
+
+    async with Fetcher(FAST) as f:
+        registry = McpOfficialRegistry(f, max_pages=total + 10)
+        endpoints = await registry.collect()
+
+    assert pages["n"] == total, f"pagination stopped after {pages['n']} of {total} pages"
+    assert len(endpoints) == total
+    assert not registry.stats.errors, registry.stats.errors

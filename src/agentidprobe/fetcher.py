@@ -333,8 +333,12 @@ class Fetcher:
 
         # The aggregate bound, which nothing enforced until 30 July 2026. See
         # `RatePolicy.max_requests_per_host`: capping issuers is not capping hosts, and
-        # nothing accumulated across endpoints at all.
-        if self._host_requests.get(host, 0) >= self.config.rate.max_requests_per_host:
+        # nothing accumulated across endpoints at all. The registry APIs are exempt from
+        # this count and only this count -- see `Scope.unmetered_hosts`, which exists
+        # because the first version of the ceiling truncated the corpus it was protecting.
+        if (host not in self.config.scope.unmetered_hosts
+                and self._host_requests.get(host, 0)
+                >= self.config.rate.max_requests_per_host):
             return FetchResult(
                 url=url, ok=False, error_kind=ErrorKind.OUT_OF_SCOPE,
                 error_detail=f"host has already received "

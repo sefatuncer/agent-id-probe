@@ -87,6 +87,28 @@ class Scope:
     Limitations, and is written there.
     """
 
+    # Hosts exempt from `RatePolicy.max_requests_per_host`, and only from that.
+    #
+    # The ceiling is a promise about hosts we *measure*: nobody consented to being probed,
+    # so the number of requests they receive is bounded whatever their metadata says. These
+    # are not those hosts. They are documented, keyless, read-only listing APIs that exist
+    # to be enumerated, named as such in ETHICS.md 3, and enumerating one costs several
+    # hundred paginated requests by design.
+    #
+    # Without this exemption the ceiling added on 30 July 2026 silently truncated the
+    # corpus: `collect` paginates one host, the 31st page came back OUT_OF_SCOPE, the
+    # collector saw a non-200 and stopped, and the census ended at roughly three thousand
+    # records with one line in the manifest to say so. A safeguard that quietly shrinks the
+    # population it was added to protect is worse than none.
+    #
+    # Everything else still applies to them -- the 1 req/s throttle, robots.txt, the opt-out
+    # list, the failure budget. This exempts the aggregate count and nothing more.
+    unmetered_hosts: frozenset[str] = frozenset({
+        "registry.modelcontextprotocol.io",
+        "registry.smithery.ai",
+        "glama.ai",
+    })
+
     wellknown_paths: tuple[str, ...] = (
         "/.well-known/agent-card.json",
         "/.well-known/oauth-protected-resource",

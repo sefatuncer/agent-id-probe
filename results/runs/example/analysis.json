@@ -18,8 +18,8 @@
       "label": "C16 -- issuers advertising the RFC 9207 mix-up defence",
       "rank": 1,
       "variance_test": {
-        "passed": true,
-        "reason": "interval [0.095, 0.905] shows variance"
+        "passed": false,
+        "reason": "interval [0.095, 0.905] is +/-40.5%, wider than the +/-10% a headline may carry (m=1)"
       }
     },
     {
@@ -40,8 +40,8 @@
       "label": "C18 -- issuers publishing RFC 9728 \u00a74 protected_resources",
       "rank": 2,
       "variance_test": {
-        "passed": true,
-        "reason": "interval [0.000, 0.793] shows variance"
+        "passed": false,
+        "reason": "interval [0.000, 0.793] is +/-39.7%, wider than the +/-10% a headline may carry (m=1)"
       }
     },
     {
@@ -62,8 +62,8 @@
       "label": "C12/C13 -- mechanical conformance of declared identifiers",
       "rank": 4,
       "variance_test": {
-        "passed": true,
-        "reason": "interval [0.207, 1.000] shows variance"
+        "passed": false,
+        "reason": "interval [0.207, 1.000] is +/-39.7%, wider than the +/-10% a headline may carry (m=1)"
       }
     },
     {
@@ -84,8 +84,8 @@
       "label": "C17 -- issuers offering non-interactive client bootstrap",
       "rank": 5,
       "variance_test": {
-        "passed": true,
-        "reason": "interval [0.000, 0.658] shows variance"
+        "passed": false,
+        "reason": "interval [0.000, 0.658] is +/-32.9%, wider than the +/-10% a headline may carry (m=1)"
       }
     }
   ],
@@ -96,8 +96,8 @@
   },
   "endpoints": 4,
   "headline": {
-    "reason": "interval [0.095, 0.905] shows variance",
-    "selected": "C16 -- issuers advertising the RFC 9207 mix-up defence"
+    "reason": "no rate candidate showed variance; the topology result is not a rate and is therefore not subject to the variance test",
+    "selected": "ecosystem topology (R11.2 fallback)"
   },
   "issuers": {
     "declared": 2,
