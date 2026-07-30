@@ -16,7 +16,7 @@ import respx
 from agentidprobe.checks_oauth import probe_oauth
 from agentidprobe.collectors import apex_domain, endpoint_id
 from agentidprobe.config import AbortPolicy, MeasurementConfig, RatePolicy
-from agentidprobe.fetcher import Fetcher, FetchResult
+from agentidprobe.fetcher import ErrorKind, Fetcher, FetchResult
 from agentidprobe.models import CheckId, Endpoint, EndpointKind, Modality, Outcome
 from agentidprobe.runner import Runner, summarise
 from agentidprobe.store import RunStore
@@ -607,3 +607,90 @@ def test_endpoints_with_no_resolvable_apex_each_count_as_their_own_operator():
     endpoints = [_corpus_endpoint(f"https://10.0.0.{i}/mcp", None) for i in range(1, 11)]
     chosen = rehearsal_slice(endpoints, 5)
     assert len({e.endpoint_id for e in chosen}) == 5
+
+
+# --- a host that never answered has not told us anything ----------------------
+
+
+@respx.mock
+@pytest.mark.parametrize("kind", [ErrorKind.DNS, ErrorKind.TIMEOUT,
+                                  ErrorKind.CONNECTION, ErrorKind.TLS])
+async def test_a_transport_failure_is_an_error_not_an_endpoint_that_declined_authorization(
+    kind,
+):
+    """Found by `dry-run` against a live endpoint whose DNS did not resolve, in the
+    pre-flight before the narrow-slice rehearsal on 30 July 2026.
+
+    With no response there is no 401, so `requires_authorization` is false, so every MUST
+    stage took the composition branch and the dataset recorded
+    *"authorization is OPTIONAL in MCP and this endpoint did not require it"* against a host
+    we never reached. Under a DOI, about a named third party.
+
+    The outcome was wrong as well as the sentence. R5 makes ERROR the set the second census
+    run reconciles — an ERROR is final only once it recurs across two runs 24 hours apart —
+    and NOT_APPLICABLE is not in that set. An endpoint suffering a transient failure during
+    run 1 would have been booked as one that does not use authorization, and the run whose
+    entire purpose is to re-ask would never have been pointed at it.
+
+    Nothing published moves: both outcomes leave every denominator, and `summarise` already
+    dropped these endpoints one stage earlier on `reachable`. The stored record changes from
+    a false claim to a true one.
+    """
+    async with Fetcher(FAST) as f:
+        initial = FetchResult(url="https://gone-example.org/mcp", ok=False,
+                              status=None, error_kind=kind)
+        checks, _ = await probe_oauth(f, "https://gone-example.org/mcp", initial)
+
+    for check_id in (CheckId.PRM_PRESENT, CheckId.PRM_RESOURCE_IDENTITY_MATCH,
+                     CheckId.AS_CORRESPONDENCE, CheckId.PKCE_DECLARED):
+        outcome = _outcome(checks, check_id)
+        assert outcome is Outcome.ERROR, f"{check_id} recorded {outcome} for a {kind} failure"
+
+    details = " ".join(c.detail for c in checks if c.detail)
+    assert "did not require it" not in details, (
+        "a host that never answered was recorded as one that declined authorization"
+    )
+    assert kind.value in details, "the stored record must name what actually happened"
+
+
+@respx.mock
+async def test_a_transport_failure_on_the_card_path_is_not_absence_of_a_card():
+    """The same distinction in the signed-document funnel.
+
+    C01 asks whether an agent card is published. A host that did not answer has not been
+    observed to lack one, but the no-card branch read `HTTP None` as absence and recorded it
+    that way — putting the endpoint outside R5's reconciliation set for the same reason.
+    """
+    from agentidprobe.checks_signed import probe_signed
+
+    async with Fetcher(FAST) as f:
+        fetched = FetchResult(url="https://gone-example.org/.well-known/agent-card.json",
+                              ok=False, status=None, error_kind=ErrorKind.TIMEOUT)
+        checks, _ = await probe_signed(f, fetched.url, fetched)
+
+    assert _outcome(checks, CheckId.IDENTITY_METADATA_PUBLISHED) is Outcome.ERROR
+    assert all(c.outcome is Outcome.ERROR for c in checks)
+    assert "timeout" in " ".join(c.detail for c in checks if c.detail)
+
+
+@respx.mock
+async def test_our_own_exclusions_say_so_rather_than_naming_the_error(monkeypatch):
+    """An opt-out and a robots exclusion are our decisions, not the operator's behaviour.
+
+    Both reach this branch with `status=None`, so the fix above had to keep them
+    distinguishable from a dead host: the reader of the dataset must be able to tell an
+    operator who asked to be left alone from one whose server was down.
+    """
+    config = MeasurementConfig(
+        rate=RatePolicy(per_host_requests_per_second=1000.0, max_retries=0),
+        opted_out=frozenset({"quiet-example.org"}),
+    )
+    async with Fetcher(config) as f:
+        initial = await f.fetch("https://quiet-example.org/mcp")
+        checks, _ = await probe_oauth(f, "https://quiet-example.org/mcp", initial)
+
+    assert initial.error_kind is ErrorKind.OPTED_OUT
+    assert all(c.outcome is Outcome.ERROR for c in checks)
+    details = " ".join(c.detail for c in checks if c.detail)
+    assert "operator's request" in details
+    assert "opted_out (R4/R5)" not in details

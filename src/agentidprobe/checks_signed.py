@@ -281,6 +281,22 @@ async def probe_signed(
             add(cid, Outcome.ERROR, ANCHOR_STRENGTH[cid], detail="access block (R4)")
         return checks, ev
 
+    # The same distinction the OAuth path draws: a host that never answered has not been
+    # observed to lack a card. Without this the no-card branch below recorded C01 as
+    # `no usable card (HTTP None)` -- absence of publication -- for a transport failure,
+    # and R5's reconciliation set again missed the endpoints it exists to re-ask about.
+    if fetched.status is None and fetched.error_kind is not ErrorKind.NONE:
+        if fetched.error_kind is ErrorKind.OPTED_OUT:
+            reason = "not observed: excluded at the operator's request (ETHICS.md 7)"
+        elif fetched.error_kind is ErrorKind.ROBOTS_DISALLOWED:
+            reason = "not observed: excluded by robots.txt (R4, ETHICS.md 6)"
+        else:
+            reason = f"not observed: {fetched.error_kind.value} (R4/R5)"
+        for cid in (CheckId.IDENTITY_METADATA_PUBLISHED, CheckId.CARD_SIGNED,
+                    CheckId.KEY_RESOLVABLE, CheckId.SIGNATURE_VERIFIES, CheckId.KEY_STRENGTH):
+            add(cid, Outcome.ERROR, ANCHOR_STRENGTH[cid], detail=reason)
+        return checks, ev
+
     # C01 - publishing a card is only SHOULD, so absence is never a failure.
     document: Any = None
     if fetched.status == 200:

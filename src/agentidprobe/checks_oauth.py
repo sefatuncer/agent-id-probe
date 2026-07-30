@@ -498,6 +498,37 @@ async def probe_oauth(
             detail="access block (R4)")
         return checks, ev
 
+    # Neither does a host that never answered, or one our own policy stopped us asking.
+    #
+    # Found in the pre-flight before the narrow-slice rehearsal on 30 July 2026, by reading
+    # a `dry-run` verdict against a live endpoint whose DNS did not resolve. There is no
+    # response, so `requires_authorization` below is false, so every MUST stage fell into
+    # the composition branch and was written to the dataset as NOT_APPLICABLE with the
+    # detail *"authorization is OPTIONAL in MCP and this endpoint did not require it"* --
+    # an assertion about an operator we never reached, published under a DOI.
+    #
+    # It is also the wrong outcome rather than merely a wrong sentence. R5 makes ERROR the
+    # set that the second census run reconciles: an ERROR becomes final only by recurring
+    # across two runs 24 hours apart. NOT_APPLICABLE is not in that set, so a host suffering
+    # a transient DNS or timeout failure during run 1 would have been silently recorded as
+    # one that does not use authorization, and the run that exists to catch exactly that
+    # would never have been asked about it.
+    #
+    # No published rate moves: NOT_APPLICABLE and ERROR both leave every denominator, and
+    # the funnel already excluded these endpoints one stage earlier via `reachable`. What
+    # changes is that the stored record now says what happened.
+    if initial.status is None and initial.error_kind is not ErrorKind.NONE:
+        if initial.error_kind is ErrorKind.OPTED_OUT:
+            reason = "not observed: excluded at the operator's request (ETHICS.md 7)"
+        elif initial.error_kind is ErrorKind.ROBOTS_DISALLOWED:
+            reason = "not observed: excluded by robots.txt (R4, ETHICS.md 6)"
+        else:
+            reason = f"not observed: {initial.error_kind.value} (R4/R5)"
+        for cid in _MUST_STAGES:
+            add(cid, Outcome.ERROR, NormativeStrength.MUST, detail=reason)
+        add(CheckId.PKCE_DECLARED, Outcome.ERROR, NormativeStrength.SHOULD, detail=reason)
+        return checks, ev
+
     ev.requires_authorization = initial.status in (401, 403)
     ev.www_authenticate = initial.headers.get("www-authenticate")
 
