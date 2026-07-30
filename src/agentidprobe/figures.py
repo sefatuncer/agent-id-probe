@@ -1,4 +1,4 @@
-"""Figures 1 and 2, written against a synthetic fixture before any measurement exists.
+"""Figures 1, 2 and 3, written against a synthetic fixture before any measurement exists.
 
 Why this module exists now rather than after the run
 ----------------------------------------------------
@@ -16,17 +16,28 @@ what denominator, with what cut.
 
 What keeps them honest afterwards
 ---------------------------------
-* **Figure 2 computes nothing.** Every plotted quantity comes from `analysis.py` --
-  `build_delegation_graph`, `DelegationGraph.concentration`, `cluster_robust_proportion`.
-  `figure2_data()` returns precisely what the renderer draws, and `tests/test_figures.py`
-  asserts those values against `analysis.py`'s own output. A figure that disagrees with the
-  statistics section is therefore a test failure rather than a reader's discovery.
+* **Figures 2 and 3 compute nothing.** Every plotted quantity comes from `analysis.py` --
+  `build_delegation_graph`, `DelegationGraph.concentration`, `cluster_robust_proportion`,
+  `headline_candidates`, `passes_variance_test`, `select_headline`, and the R11.2 band
+  constants. `figure2_data()` and `figure3_data()` return precisely what the renderers draw,
+  and `tests/test_figures.py` asserts those values against `analysis.py`'s own output. A
+  figure that disagrees with the statistics section is therefore a test failure rather than a
+  reader's discovery. Figure 3 needs this most: it does not illustrate the headline decision,
+  it *is* that decision, and intervals differing from the transcript printed beside them
+  would be the most damaging discrepancy the paper could contain.
 * **Figure 1 names checks by `CheckId` member, never by string.** C06 and C10 were deleted
   in July and lived on in a hand-written table until two people happened to read both. An
   edge labelled with a deleted check now raises `AttributeError` at import.
 * **The numbers are written out beside the plots.** `render_all` drops a
   `figure-data.json` next to the PDFs, so the prose can cite the same file the figure was
   built from instead of a number retyped from a picture.
+* **The fixture has to be able to fail.** Twice now a figure has been green over a fixture
+  incapable of exercising it -- Figure 2's first draft put every edge in one bucket and
+  reported a 100% cross-operator rate, and Figure 3's first render found three of four
+  candidates at `0.0% [0.0%, 0.0%]` with no `checks` in the fixture at all, so no candidate
+  was ever selected and the winner's drawing path never ran. Both were caught by opening the
+  PNG, neither by reading the code. `test_the_synthetic_fixture_can_actually_exercise_figure3`
+  is that lesson as an assertion.
 
 matplotlib is an optional extra (`pip install .[figures]`). `analysis.py` is
 standard-library only on purpose, and importing this module must not quietly change that,
@@ -42,14 +53,30 @@ from pathlib import Path
 from typing import Any
 
 from .analysis import (
+    HEADLINE_CANDIDATES,
+    MAX_HEADLINE_HALF_WIDTH,
+    VARIANCE_CEILING,
+    VARIANCE_FLOOR,
     DelegationGraph,
     ProportionEstimate,
     build_delegation_graph,
     cluster_robust_proportion,
     cross_check_feasibility,
+    headline_candidates,
+    passes_variance_test,
+    select_headline,
 )
 from .collectors import apex_domain, endpoint_id
-from .models import CheckId, Endpoint, EndpointKind, EndpointReport, Modality
+from .models import (
+    CheckId,
+    CheckResult,
+    Endpoint,
+    EndpointKind,
+    EndpointReport,
+    Modality,
+    NormativeStrength,
+    Outcome,
+)
 
 # ---------------------------------------------------------------------------
 # Presentation constants, fixed here so no renderer picks them per dataset
@@ -112,15 +139,23 @@ def _rc() -> dict[str, Any]:
     }
 
 
-def _save(fig, out_dir: Path, stem: str, formats: tuple[str, ...]) -> list[Path]:
+def _save(fig, out_dir: Path, stem: str, formats: tuple[str, ...],
+          *, tight: bool = True) -> list[Path]:
+    """Write one figure in every requested format, reproducibly.
+
+    `tight=False` is for figures that place their own axes. `bbox_inches="tight"` recomputes
+    the canvas from whatever ended up drawn, which is right for the schematic and for Figure 2
+    and wrong for Figure 3: that one reserves a column for its numbers, and letting the box
+    grow to fit the longest label collapsed the plot into half the frame.
+    """
     written: list[Path] = []
     for fmt in formats:
         path = out_dir / f"{stem}.{fmt}"
         # No creation date in the PDF: a byte-identical rebuild is worth more than a
         # timestamp nobody reads, and R8's whole claim is about rebuilding things.
         metadata = {"CreationDate": None} if fmt == "pdf" else None
-        fig.savefig(path, format=fmt, dpi=300, bbox_inches="tight",
-                    metadata=metadata, pad_inches=0.02)
+        extra = {"bbox_inches": "tight", "pad_inches": 0.02} if tight else {}
+        fig.savefig(path, format=fmt, dpi=300, metadata=metadata, **extra)
         written.append(path)
     return written
 
@@ -571,6 +606,19 @@ def synthetic_population(n_apexes: int = 60) -> list[EndpointReport]:
     `apex_domain` is computed by the same function the analysis uses rather than assigned,
     so the fixture cannot disagree with the code about what an apex is -- which is exactly
     how the first draft went wrong.
+
+    **Extended on 30 July 2026 for Figure 3, and for the same reason the host names were
+    fixed.** As built for Figure 2 this population carried no `checks` and none of the fields
+    C16 and C17 read, so three of Figure 3's four candidates came out at `0.0% [0.0%, 0.0%]`
+    and rank 4 at `n=0 m=0`. Every one of them was therefore rejected, the winner's drawing
+    path was never executed, and the figure could not have shown a layout defect if it had
+    one -- which is precisely the failure the paragraph above describes for Figure 2's first
+    draft: a green test over a fixture incapable of exercising the thing under test.
+
+    The mixture below is not tuned to make a chosen candidate win. It is spread across
+    clusters so that the intervals are of realistic width, because a fixture in which every
+    outcome is perfectly correlated within its cluster produces intervals so wide that R11.2
+    rejects everything, which is the same dead figure by the opposite route.
     """
     shared = [
         "https://idp-a.example.com",
@@ -595,6 +643,24 @@ def synthetic_population(n_apexes: int = 60) -> list[EndpointReport]:
         else:
             issuers = [f"https://auth.{apex}"]
 
+        # C12 and C13, which R11.1 ranks fourth as a pair. Spread so the pair is neither
+        # unanimous nor split down the middle: without any `checks` at all this candidate
+        # came out of `rate_by_unit` as n=0, m=0.
+        checks = [
+            CheckResult(
+                check_id=CheckId.PRM_RESOURCE_IDENTITY_MATCH,
+                outcome=Outcome.PASS if i % 8 else Outcome.FAIL_MISIMPLEMENTED,
+                normative_strength=NormativeStrength.MUST,
+                spec_ref="RFC 9728 3.3", spec_url="https://www.rfc-editor.org/rfc/rfc9728.html",
+            ),
+            CheckResult(
+                check_id=CheckId.AS_CORRESPONDENCE,
+                outcome=Outcome.PASS if i % 6 else Outcome.FAIL_MISIMPLEMENTED,
+                normative_strength=NormativeStrength.MUST,
+                spec_ref="RFC 8414 3.3", spec_url="https://www.rfc-editor.org/rfc/rfc8414.html",
+            ),
+        ]
+
         reports.append(EndpointReport(
             endpoint=Endpoint(endpoint_id=endpoint_id(url), url=url,
                               apex_domain=apex_domain(url),
@@ -602,6 +668,7 @@ def synthetic_population(n_apexes: int = 60) -> list[EndpointReport]:
             modality=Modality.OAUTH_METADATA,
             reachable=True,
             http_status=401,
+            checks=checks,
             evidence={
                 "declared_resource": url,
                 "authorization_servers": issuers,
@@ -612,6 +679,18 @@ def synthetic_population(n_apexes: int = 60) -> list[EndpointReport]:
                         # of those list this resource. Both are the empirical questions.
                         **({"protected_resources": [url]} if i % 4 == 0 else {}),
                         **({"protected_resources": []} if i % 4 == 1 else {}),
+                        # C16 and C17's fields. Keyed on the *issuer* rather than on `i`,
+                        # because both are properties of an identity product and every tenant
+                        # of one product answers identically -- which is the clustering the
+                        # issuer-level intervals exist to account for. Keying them on the
+                        # endpoint index instead would have manufactured within-cluster
+                        # variation that the real ecosystem does not have.
+                        **({"authorization_response_iss_parameter_supported": True}
+                           if issuer in (shared[0], shared[2]) or issuer.startswith("https://auth.tenant0")
+                           else {}),
+                        **({"registration_endpoint": f"{issuer}/register"}
+                           if issuer != shared[3] and not issuer.endswith("-example.org")
+                           else {}),
                     }
                     for issuer in issuers
                 },
@@ -620,6 +699,190 @@ def synthetic_population(n_apexes: int = 60) -> list[EndpointReport]:
             run_id="synthetic",
         ))
     return reports
+
+
+# ---------------------------------------------------------------------------
+# Figure 3 -- the R11.2 selection, drawn
+# ---------------------------------------------------------------------------
+
+FIG3_HEIGHT_IN = 2.90
+
+
+def figure3_data(reports: list[EndpointReport], conf: float = 0.95) -> dict:
+    """Everything Figure 3 draws, computed only by `analysis.py`.
+
+    Figure 3 is unusual among the three in that it does not illustrate a result -- it *is* the
+    decision. R11.2 selects the paper's headline by rejecting any candidate whose
+    cluster-robust interval sits inside a rejection band or is wider than the precision limit,
+    and taking the highest-ranked survivor. Drawing the candidates against those bands makes
+    the rule auditable at a glance: a reader can see which candidate won and check that the
+    ones above it in rank really were excluded.
+
+    Nothing here is computed locally. The estimates come from `headline_candidates`, the
+    verdicts from `passes_variance_test`, the winner from `select_headline`, and the band edges
+    from the module constants -- so the figure cannot disagree with §5.6 without breaking a
+    test, and the bands cannot be widened to admit a nicer candidate without changing the rule
+    that the transcript prints.
+
+    The rank order is `HEADLINE_CANDIDATES`, which R11.1 froze before collection. It is read
+    rather than sorted: sorting these by estimate would let the picture imply a ranking the
+    rule does not use, and re-ordering a plot is exactly the kind of degree of freedom the top
+    of this module is about.
+    """
+    candidates = headline_candidates(reports, conf)
+    winner, reason = select_headline(candidates)
+
+    rows = []
+    for (rank, label, denominator), (_, estimate) in zip(
+        HEADLINE_CANDIDATES, candidates, strict=True
+    ):
+        verdict = passes_variance_test(estimate)
+        rows.append({
+            "rank": rank,
+            "label": label,
+            "denominator": denominator,
+            "estimate": estimate.as_record(),
+            "passed": verdict.passed,
+            "reason": verdict.reason,
+            "is_headline": label == winner,
+        })
+
+    return {
+        "bands": {
+            "floor": VARIANCE_FLOOR,
+            "ceiling": VARIANCE_CEILING,
+            "max_half_width": MAX_HEADLINE_HALF_WIDTH,
+        },
+        "candidates": rows,
+        "headline": {"selected": winner, "reason": reason},
+    }
+
+
+def _candidate_tick(row: dict) -> str:
+    """The y-axis label for one candidate: rank above, check identifier below. Display only.
+
+    The full candidate name does not fit at 190 mm, and it is in the caption and in Table 8,
+    which is where a reader looks it up. What the axis has to carry is which row is which, and
+    the rank is the part R11.1 froze.
+    """
+    return f"rank {row['rank']}\n{row['label'].partition(' -- ')[0]}"
+
+
+def figure3_selection(
+    data: dict, out_dir: Path, formats: tuple[str, ...] = ("pdf", "png")
+) -> list[Path]:
+    """One panel: candidates on the y-axis in frozen rank order, rate on the x-axis.
+
+    Design decisions worth stating, because each rules out something that looked reasonable.
+
+    **One axis.** The rate and the interval half-width are both plotted against the same
+    x-axis in rate units; the half-width limit is drawn as a horizontal extent on each row
+    rather than on a second scale. Figure 2's first draft had two y-scales and was
+    unreadable, and the same trap is available here -- "rate on the bottom, precision on the
+    right" -- so it is refused by construction.
+
+    **The verdict is never carried by colour.** A filled marker with the accent and a bold
+    verdict word means selected; an open marker in muted ink means rejected; and the reason is
+    printed as text on the row. Three redundant channels, which is what the figure needs to
+    survive greyscale printing and photocopying, and what keeps it readable for a reader with
+    any form of colour vision deficiency.
+
+    **The bands are drawn, not described.** `[0, 2%]` and `[98%, 100%]` are shaded, so a
+    candidate that sits in one is visibly in it. A reader who thinks the bands are wrong can
+    see exactly what a different threshold would have selected, which is the honest way to
+    present a rule that decides the paper's headline.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
+
+    bands = data["bands"]
+    rows = data["candidates"]
+
+    with plt.rc_context(_rc()):
+        fig, ax = plt.subplots(figsize=(FIG_WIDTH_IN, FIG3_HEIGHT_IN))
+        # The axes occupy the left ~58% and the numbers live in a reserved column to their
+        # right. Placed explicitly rather than left to `bbox_inches="tight"`: the first draft
+        # annotated at x=1.02 in axes fraction and let the tight box grow to fit, which
+        # squeezed the plot into 55% of the frame and left a band of empty page below it
+        # taller than the plot itself. Reserving the column makes the geometry a decision
+        # instead of a side effect of the longest label.
+        fig.subplots_adjust(left=0.155, right=0.585, top=0.97, bottom=0.36)
+
+        # Rejection bands first, so every mark sits on top of them.
+        ax.axvspan(0.0, bands["floor"], color=FILL_LIGHT, zorder=0, linewidth=0)
+        ax.axvspan(bands["ceiling"], 1.0, color=FILL_LIGHT, zorder=0, linewidth=0)
+
+        positions = list(range(len(rows) - 1, -1, -1))
+        for y, row in zip(positions, rows, strict=True):
+            estimate = row["estimate"]
+            p_hat, lo, hi = estimate["p_hat"], estimate["ci_lo"], estimate["ci_hi"]
+            selected = row["is_headline"]
+            colour = ACCENT if selected else INK_MUTED
+
+            ax.plot([lo, hi], [y, y], color=colour, linewidth=1.6,
+                    solid_capstyle="butt", zorder=3)
+            for edge in (lo, hi):
+                ax.plot([edge, edge], [y - 0.12, y + 0.12], color=colour,
+                        linewidth=1.2, zorder=3)
+            ax.plot([p_hat], [y],
+                    marker="o", markersize=6.5,
+                    markerfacecolor=colour if selected else SURFACE,
+                    markeredgecolor=colour, markeredgewidth=1.4, zorder=4)
+
+            verdict = "SELECTED" if selected else "rejected"
+            ax.annotate(
+                f"{p_hat:.1%}  [{lo:.1%}, {hi:.1%}]   n={estimate['n']}  m={estimate['m']}"
+                f"   {verdict}",
+                xy=(1.02, y), xycoords=("axes fraction", "data"),
+                va="center", ha="left", fontsize=7.0,
+                color=INK if selected else INK_MUTED,
+                fontweight="bold" if selected else "normal",
+            )
+
+        ax.set_yticks(positions)
+        ax.set_yticklabels([
+            _candidate_tick(row) for row in rows
+        ])
+        ax.set_ylim(-0.7, len(rows) - 0.3)
+        ax.set_xlim(0.0, 1.0)
+        ax.set_xticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+        ax.xaxis.set_major_formatter(lambda v, _: f"{v:.0%}")
+        ax.set_xlabel("rate, with cluster-robust 95% interval")
+
+        ax.grid(axis="x", color=RULE, linewidth=0.4, alpha=0.5, zorder=1)
+        ax.set_axisbelow(True)
+        for side in ("top", "right", "left"):
+            ax.spines[side].set_visible(False)
+        ax.tick_params(axis="y", length=0)
+
+        # Legend and footnote anchored in *figure* coordinates, under the axes, so neither can
+        # drag the bounding box downward the way axes-fraction offsets did.
+        fig.legend(
+            handles=[
+                Patch(facecolor=FILL_LIGHT, edgecolor="none",
+                      label=f"R11.2 rejection bands: at or below {bands['floor']:.0%} "
+                            f"(nobody) and at or above {bands['ceiling']:.0%} (everybody)"),
+            ],
+            loc="lower left", bbox_to_anchor=(0.155, 0.135), frameon=False,
+        )
+        # Wrapped by hand at a width that fits 190 mm. Left to one line it ran off the right
+        # edge of the canvas and the last clause was simply not in the file -- invisible in the
+        # code, obvious the moment the PNG was opened.
+        fig.text(
+            0.155, 0.10,
+            f"A candidate is also rejected if its interval is wider than "
+            f"±{bands['max_half_width']:.0%}. The highest-ranked survivor leads the paper.\n"
+            f"Rank 3 is the topology, which is not a rate; R11.2 makes it the fallback when "
+            f"no rate qualifies.",
+            ha="left", va="top", fontsize=6.8, color=INK_MUTED, linespacing=1.5,
+        )
+
+        written = _save(fig, out_dir, "figure3-headline-selection", formats,
+                        tight=False)
+        plt.close(fig)
+    return written
 
 
 # ---------------------------------------------------------------------------
@@ -635,11 +898,14 @@ def render_all(
     """Render both figures and write the numbers beside them."""
     out_dir.mkdir(parents=True, exist_ok=True)
     data = figure2_data(reports)
+    selection = figure3_data(reports)
     written = figure1_discovery_chain(out_dir, formats)
     written += figure2_delegation(data, out_dir, formats)
+    written += figure3_selection(selection, out_dir, formats)
 
     payload = {
         "figure2": data,
+        "figure3": selection,
         "endpoints": len(reports),
         # Loud, in the file itself. A synthetic figure that escapes into a draft and is
         # read as a measurement is the single worst thing this module could cause.

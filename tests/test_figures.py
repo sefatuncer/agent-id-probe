@@ -21,14 +21,22 @@ import json
 import pytest
 
 from agentidprobe.analysis import (
+    HEADLINE_CANDIDATES,
+    MAX_HEADLINE_HALF_WIDTH,
+    VARIANCE_CEILING,
+    VARIANCE_FLOOR,
     build_delegation_graph,
     cluster_robust_proportion,
     cross_check_feasibility,
+    headline_candidates,
+    passes_variance_test,
+    select_headline,
 )
 from agentidprobe.figures import (
     CHAIN,
     TOP_K,
     figure2_data,
+    figure3_data,
     render_all,
     synthetic_population,
 )
@@ -195,7 +203,7 @@ def test_two_renders_of_the_same_input_are_byte_identical(tmp_path):
         digests.append({
             name: hashlib.sha256((tmp_path / run / name).read_bytes()).hexdigest()
             for name in ("fig1-discovery-chain.pdf", "fig2-delegation.pdf",
-                         "figure-data.json")
+                         "figure3-headline-selection.pdf", "figure-data.json")
         })
     assert digests[0] == digests[1]
 
@@ -242,3 +250,105 @@ def test_the_fixture_never_leaves_reserved_or_synthetic_names():
         assert host.endswith("-example.org"), host
         for issuer in report.evidence["authorization_servers"]:
             assert issuer.endswith(("example.com", "example.net", "-example.org")), issuer
+
+
+# --- Figure 3: the R11.2 selection ---------------------------------------------
+
+
+def test_figure3_computes_nothing_of_its_own():
+    """The Figure 2 contract, applied to the figure that draws the headline decision.
+
+    Every value must come from `analysis.py`, so that the picture cannot disagree with §5.6
+    without breaking a test. This matters more here than for Figure 2: Figure 3 is not an
+    illustration of the selection, it *is* the selection, and a figure that drew slightly
+    different intervals from the transcript beside it would be the most damaging possible
+    discrepancy in the paper.
+    """
+    reports = synthetic_population()
+    data = figure3_data(reports)
+    expected = headline_candidates(reports)
+    winner, reason = select_headline(expected)
+
+    assert data["headline"] == {"selected": winner, "reason": reason}
+    assert len(data["candidates"]) == len(expected)
+    for row, (label, estimate) in zip(data["candidates"], expected, strict=True):
+        assert row["label"] == label
+        assert row["estimate"] == estimate.as_record()
+        assert row["passed"] == passes_variance_test(estimate).passed
+        assert row["reason"] == passes_variance_test(estimate).reason
+
+
+def test_figure3_draws_the_frozen_rank_order_and_not_a_sorted_one():
+    """R11.1's order is the content, so sorting would be a claim the rule does not make.
+
+    Ordering the rows by estimate would let the picture imply a ranking by size while the
+    selection rule uses rank, and the two disagree in the fixture already: rank 4 has the
+    largest rate and rank 1 comes first.
+    """
+    data = figure3_data(synthetic_population())
+    assert [row["rank"] for row in data["candidates"]] == [
+        rank for rank, _, _ in HEADLINE_CANDIDATES
+    ]
+    assert [row["denominator"] for row in data["candidates"]] == [
+        denominator for _, _, denominator in HEADLINE_CANDIDATES
+    ]
+
+
+def test_figure3_bands_are_the_rule_not_literals():
+    """The shaded regions are R11.2's thresholds, read from the module that enforces them.
+
+    Hard-coding 2% and 98% in the renderer would let the figure keep drawing the old bands
+    after the rule changed -- and a figure showing more generous bands than the rule applies
+    is an argument that a rejected candidate should have won.
+    """
+    bands = figure3_data(synthetic_population())["bands"]
+    assert bands["floor"] == VARIANCE_FLOOR
+    assert bands["ceiling"] == VARIANCE_CEILING
+    assert bands["max_half_width"] == MAX_HEADLINE_HALF_WIDTH
+
+
+def test_the_synthetic_fixture_can_actually_exercise_figure3():
+    """The guard for the defect that this figure was first written with.
+
+    As built for Figure 2 the fixture carried no `checks` and none of the fields C16 and C17
+    read, so three of the four candidates came out at `0.0% [0.0%, 0.0%]`, rank 4 at
+    `n=0 m=0`, every candidate was rejected, and the code path that draws the winner never
+    ran. The render was green and proved nothing -- the same failure the module docstring
+    records for Figure 2's first draft, where every edge fell into one bucket and the
+    cross-operator rate was 100%.
+
+    A fixture that cannot show the thing under test is worse than no fixture, because it
+    passes. So: every candidate must rest on a real denominator, the rates must not all be
+    identical, and exactly one candidate must be selected so that the accent, the filled
+    marker and the bold verdict are all exercised.
+    """
+    data = figure3_data(synthetic_population())
+    rows = data["candidates"]
+
+    for row in rows:
+        assert row["estimate"]["n"] > 0, f"{row['label']} has an empty denominator"
+        assert row["estimate"]["m"] > 0, f"{row['label']} has no clusters"
+
+    rates = {row["estimate"]["p_hat"] for row in rows}
+    assert len(rates) == len(rows), "the fixture gives candidates indistinguishable rates"
+
+    selected = [row for row in rows if row["is_headline"]]
+    assert len(selected) == 1, (
+        "no candidate is selected, so the renderer's winner path is never executed"
+    )
+    assert selected[0]["passed"] is True
+
+
+def test_figure3_selects_by_rank_among_the_survivors():
+    """R11.2 in the data the figure draws: the winner is the highest-ranked passing candidate.
+
+    Asserted against the rows rather than against `select_headline` alone, because the figure
+    is what a reader audits the rule against, and "the marked row is the first one that
+    passed" is the property they will check by eye.
+    """
+    rows = figure3_data(synthetic_population())["candidates"]
+    survivors = [row for row in rows if row["passed"]]
+    assert survivors, "fixture must leave at least one survivor"
+    assert survivors[0]["is_headline"] is True
+    for row in survivors[1:]:
+        assert row["is_headline"] is False
