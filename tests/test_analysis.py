@@ -8,6 +8,7 @@ a confident number.
 import math
 
 from agentidprobe.analysis import (
+    MAX_HEADLINE_HALF_WIDTH,
     VARIANCE_CEILING,
     VARIANCE_FLOOR,
     cluster_robust_proportion,
@@ -393,16 +394,28 @@ def test_variance_test_accepts_a_real_spread():
 
 
 def test_variance_test_uses_the_cluster_robust_interval_not_the_naive_one():
-    """The two intervals can disagree about the verdict, so which one R11.2 reads is not a
-    detail. Here every failure sits in one cluster: the naive interval says the rate is
-    confined below the 2% floor and the candidate is "essentially nobody", while the
-    cluster-robust interval — which knows the failures came from a single operator — is
-    wide enough to cross it."""
-    clusters = [(8, 50)] + [(0, 50)] * 19
-    est = cluster_robust_proportion(clusters)
-    assert est.naive_hi < VARIANCE_FLOOR       # naive alone would reject the candidate
-    assert est.hi > VARIANCE_FLOOR             # the honest interval does not
-    assert passes_variance_test(est).passed is True
+    """Which interval R11.2 reads decides the verdict, so it is not a detail.
+
+    Ten clusters at 100% and ten at 0%: the property is perfectly correlated inside each
+    cluster, which is the realistic shape for an issuer-level rate, because `iss` support is
+    a property of an identity product rather than of a tenant. The naive interval sees a
+    thousand independent observations and reports +/-3.1pp — comfortably publishable. The
+    cluster-robust interval knows there are really twenty and reports +/-24pp.
+
+    R11.2 must reject this. Reading the naive interval would publish a headline at eight
+    times the precision the sample can support, and the earlier form of this test asserted
+    the *opposite* verdict on a different fixture — one whose point estimate was 0.8%, which
+    the amended rule now rejects outright as "essentially nobody".
+    """
+    est = cluster_robust_proportion([(50, 50)] * 10 + [(0, 50)] * 10)
+    naive_half_width = (est.naive_hi - est.naive_lo) / 2
+    robust_half_width = (est.hi - est.lo) / 2
+    assert naive_half_width < MAX_HEADLINE_HALF_WIDTH    # naive alone would allow it
+    assert robust_half_width > MAX_HEADLINE_HALF_WIDTH   # the honest interval does not
+
+    verdict = passes_variance_test(est)
+    assert verdict.passed is False
+    assert "wider than" in verdict.reason
 
 
 def test_select_headline_respects_the_frozen_order():

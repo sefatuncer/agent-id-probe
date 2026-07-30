@@ -42,6 +42,9 @@ class ErrorKind(StrEnum):
     TOO_LARGE = "too_large"
     ROBOTS_DISALLOWED = "robots_disallowed"
     OPTED_OUT = "opted_out"      # operator asked to be excluded; leaves every denominator
+    # A redirect pointed somewhere the scope statement does not permit us to follow. Our
+    # decision, so it leaves every denominator exactly as the two above do.
+    OUT_OF_SCOPE = "out_of_scope"
     OTHER = "other"
 
 
@@ -226,6 +229,10 @@ class Fetcher:
         self._robots_locks: dict[str, asyncio.Lock] = {}
         self._client: httpx.AsyncClient | None = None
         self._host_failures: dict[str, int] = {}
+        # Every request this pass has sent to each host, including redirect hops,
+        # retries and robots.txt. The published per-host bound is only a bound if
+        # something counts.
+        self._host_requests: dict[str, int] = {}
 
     async def __aenter__(self) -> Fetcher:
         rate = self.config.rate
@@ -253,7 +260,13 @@ class Fetcher:
             parsed = None
             try:
                 assert self._client is not None
-                resp = await self._client.get(f"{origin}/robots.txt")
+                robots_host = urlsplit(origin).hostname or urlsplit(origin).netloc
+                self._host_requests[robots_host] = self._host_requests.get(robots_host, 0) + 1
+                lock = await self._throttle.acquire(robots_host)
+                try:
+                    resp = await self._client.get(f"{origin}/robots.txt")
+                finally:
+                    self._throttle.release(robots_host, lock)
                 if resp.status_code == 200 and len(resp.content) < 512_000:
                     parsed = Protego.parse(resp.text)
             except Exception:  # noqa: BLE001 - unreachable robots.txt means no rules
@@ -281,6 +294,61 @@ class Fetcher:
             self.on_fetch(result)
         return result
 
+    def _leaves_the_public_web(self, url: str) -> str | None:
+        """Why a redirect target is outside the scope statement, or None.
+
+        Applied to redirect hops only. The first URL of a fetch is the caller's to justify
+        -- `checks_oauth._issuer_rejection_reason` and `_hint_is_followable` do that, and
+        the collectors drop non-HTTPS endpoints -- but nothing chooses a redirect target
+        except the host being measured, so this is the only place it can be checked.
+        """
+        from .collectors import apex_domain
+
+        parts = urlsplit(url)
+        if parts.scheme != "https":
+            return f"redirect to {parts.scheme!r}, not https"
+        if apex_domain(url) is None:
+            # Loopback, RFC 1918, link-local (169.254.169.254 is cloud instance metadata),
+            # bare IPs and special-use TLDs all land here.
+            host = parts.hostname or ""
+            return f"redirect to {host!r}, which has no registrable domain"
+        return None
+
+    async def _gate(self, url: str, *, is_redirect: bool) -> FetchResult | None:
+        """Every reason we refuse to send a request, in one place.
+
+        These ran once per fetch, against the URL we picked, until 30 July 2026 -- and then
+        up to three redirect hops went wherever the response said, re-checking nothing. The
+        opt-out gate in particular is a promise to a named operator, and a redirect walked
+        straight through it.
+        """
+        if is_opted_out(url, self.config.opted_out):
+            return FetchResult(url=url, ok=False, error_kind=ErrorKind.OPTED_OUT,
+                               error_detail="operator opted out (docs/ETHICS.md 7)")
+
+        host = urlsplit(url).hostname or urlsplit(url).netloc
+        if self._host_failures.get(host, 0) >= self.config.rate.host_failure_budget:
+            return FetchResult(url=url, ok=False, error_kind=ErrorKind.BLOCKED,
+                               error_detail="host failure budget exhausted")
+
+        # The aggregate bound, which nothing enforced until 30 July 2026. See
+        # `RatePolicy.max_requests_per_host`: capping issuers is not capping hosts, and
+        # nothing accumulated across endpoints at all.
+        if self._host_requests.get(host, 0) >= self.config.rate.max_requests_per_host:
+            return FetchResult(
+                url=url, ok=False, error_kind=ErrorKind.OUT_OF_SCOPE,
+                error_detail=f"host has already received "
+                             f"{self.config.rate.max_requests_per_host} requests this pass")
+
+        if is_redirect and (reason := self._leaves_the_public_web(url)) is not None:
+            return FetchResult(url=url, ok=False, error_kind=ErrorKind.OUT_OF_SCOPE,
+                               error_detail=reason)
+
+        if not await self.allowed(url):
+            # R4 denominator rule: these leave the study entirely.
+            return FetchResult(url=url, ok=False, error_kind=ErrorKind.ROBOTS_DISALLOWED)
+        return None
+
     async def _fetch(self, url: str) -> FetchResult:
         """Fetch one URL, following redirects manually and recording the chain."""
         if self._client is None:
@@ -293,17 +361,9 @@ class Fetcher:
         # their robots.txt. Enforcing this in the fetcher rather than at the corpus level
         # means no call path -- collection, a declared jwks_uri, a WWW-Authenticate hint --
         # can route around it.
-        if is_opted_out(url, self.config.opted_out):
-            return FetchResult(url=url, ok=False, error_kind=ErrorKind.OPTED_OUT,
-                               error_detail="operator opted out (docs/ETHICS.md 7)")
-
-        if self._host_failures.get(host, 0) >= self.config.rate.host_failure_budget:
-            return FetchResult(url=url, ok=False, error_kind=ErrorKind.BLOCKED,
-                               error_detail="host failure budget exhausted")
-
-        if not await self.allowed(url):
-            # R4 denominator rule: these leave the study entirely.
-            return FetchResult(url=url, ok=False, error_kind=ErrorKind.ROBOTS_DISALLOWED)
+        refusal = await self._gate(url, is_redirect=False)
+        if refusal is not None:
+            return refusal
 
         rate = self.config.rate
         chain: list[str] = []
@@ -311,8 +371,38 @@ class Fetcher:
         started = time.perf_counter()
 
         async with self._semaphore:
-            for _hop in range(self.config.scope.max_redirects + 1):
-                hop_host = urlsplit(current).netloc
+            for hop in range(self.config.scope.max_redirects + 1):
+                if hop:
+                    # Every gate is re-applied on every redirect hop, and until 30 July 2026
+                    # none of them was. They ran once, against the URL we chose, and then
+                    # httpx followed up to three hops wherever the response pointed.
+                    #
+                    # An adversarial review demonstrated the consequence rather than
+                    # arguing it: a declared issuer at `https://redir.example.net` that
+                    # answered 302 to `http://127.0.0.1:8080/admin/metadata` produced
+                    # exactly that request -- plain text, loopback, from a residential line
+                    # -- and the response was stored as evidence and scored. Link-local
+                    # `169.254.169.254` worked the same way, which on any cloud VM is the
+                    # instance metadata service, and the artefact licence is CC BY 4.0.
+                    # Redirects into an opted-out host, and into a host whose robots.txt
+                    # forbids us, were also followed.
+                    #
+                    # So the scope statement is enforced per hop. The same-apex rule is
+                    # deliberately *not* applied: a legitimate issuer redirecting to its own
+                    # CDN or regional host is normal, and refusing that would delete real
+                    # measurements. What is refused is leaving the public HTTPS web.
+                    hop_refusal = await self._gate(current, is_redirect=True)
+                    if hop_refusal is not None:
+                        hop_refusal.url = url
+                        hop_refusal.redirect_chain = chain
+                        hop_refusal.elapsed_ms = (time.perf_counter() - started) * 1000
+                        return hop_refusal
+                # Keyed on the hostname, not the netloc. Ports are not machines: ten
+                # declared issuers differing only by port measured 2.8 req/s against a
+                # published promise of 1 req/s per host, because each port got its own
+                # throttle bucket.
+                hop_host = urlsplit(current).hostname or urlsplit(current).netloc
+                self._host_requests[hop_host] = self._host_requests.get(hop_host, 0) + 1
                 lock = await self._throttle.acquire(hop_host)
                 try:
                     response = await self._request_with_retry(current)

@@ -1,10 +1,11 @@
 """Command line entry point.
 
-Six verbs, matching the things a reviewer needs to be able to redo:
+Seven verbs, matching the things a reviewer needs to be able to redo:
 
     collect    build the corpus from free registries
     probe      run the measurement, resumable
     summarise  read stored reports and print the funnels
+    analyse    execute decision rule R11 and write the headline transcript
     rescore    re-score stored artefacts with no network (decision rule R8, leg 2)
     figures    render Figures 1 and 2, from a run or from the synthetic fixture
     dry-run    probe a handful of endpoints and print everything, no persistence
@@ -136,6 +137,44 @@ def _cmd_summarise(args: argparse.Namespace) -> int:
         print(f"no reports at {store.reports_path}", file=sys.stderr)
         return 2
     print(json.dumps(summarise(reports), indent=2))
+    return 0
+
+
+def _cmd_analyse(args: argparse.Namespace) -> int:
+    """Execute decision rule R11 and write the transcript beside the run.
+
+    Until 29 July 2026 this command did not exist and `analysis.py` had no caller outside
+    the figures module: `select_headline` -- the function that picks what the paper leads
+    with, and through R11.4 what it is called -- was reachable only from its own unit test.
+    A selection rule nobody can run is a paragraph, not a rule.
+
+    The transcript is written to disk rather than printed alone because R11.2 has to be an
+    event with a record. Reading a summary and forming a view is what R11 exists to stop.
+    """
+    from .analysis import analyse
+
+    store = RunStore(Path(args.root), args.run_id)
+    reports = store.read_reports()
+    if not reports:
+        print(f"no reports at {store.reports_path}", file=sys.stderr)
+        return 2
+
+    result = analyse(reports, conf=args.conf)
+    destination = store.run_dir / "analysis.json"
+    destination.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n",
+                           encoding="utf-8")
+
+    print(f"headline: {result['headline']['selected']}")
+    print(f"  because {result['headline']['reason']}\n")
+    for candidate in result["candidates"]:
+        estimate = candidate["estimate"]
+        verdict = "passed" if candidate["variance_test"]["passed"] else "FAILED"
+        print(f"  rank {candidate['rank']}  {candidate['label']}")
+        print(f"      {estimate['p_hat']:.1%} "
+              f"[{estimate['ci_lo']:.1%}, {estimate['ci_hi']:.1%}] "
+              f"n={estimate['n']} m={estimate['m']} ({candidate['denominator']}) "
+              f"-- variance test {verdict}")
+    print(f"\nwritten to {destination}")
     return 0
 
 
@@ -286,6 +325,12 @@ def build_parser() -> argparse.ArgumentParser:
     rescore_cmd.add_argument("--verify", action="store_true",
                              help="fail with exit 1 if any verdict changed (decision rule R8)")
     rescore_cmd.set_defaults(func=lambda a: asyncio.run(_cmd_rescore(a)))
+
+    analyse_cmd = sub.add_parser(
+        "analyse", help="execute decision rule R11 and write the headline transcript")
+    analyse_cmd.add_argument("--run-id", required=True)
+    analyse_cmd.add_argument("--conf", type=float, default=0.95)
+    analyse_cmd.set_defaults(func=_cmd_analyse)
 
     figures_cmd = sub.add_parser(
         "figures", help="render Figures 1 and 2 (needs the optional 'figures' extra)")

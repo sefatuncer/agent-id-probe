@@ -201,6 +201,10 @@ class OAuthEvidence:
     malformed_authorization_servers: list = field(default_factory=list)
     as_documents: dict[str, dict] = field(default_factory=dict)
     as_errors: dict[str, str] = field(default_factory=dict)
+    # Declared issuers we chose not to request, and why: not a public HTTPS host, or past
+    # the per-endpoint cap. Recorded rather than dropped, because "this resource declares
+    # an issuer we would not contact" is itself an observation about the declaration.
+    as_not_fetched: dict[str, str] = field(default_factory=dict)
     as_issuer_relations: dict[str, str] = field(default_factory=dict)
     robots_excluded_urls: list[str] = field(default_factory=list)
 
@@ -238,6 +242,7 @@ class OAuthEvidence:
             ],
             "as_documents": self.as_documents,
             "as_errors": self.as_errors,
+            "as_not_fetched": self.as_not_fetched,
             "as_issuer_relations": self.as_issuer_relations,
             "robots_excluded_urls": list(self.robots_excluded_urls),
         }
@@ -317,7 +322,7 @@ def _hint_rejection_reason(hinted: str, resource_url: str) -> str | None:
     parts = urlsplit(hinted)
     if parts.scheme != "https":
         return f"scheme is {parts.scheme!r}, not https"
-    host = parts.netloc.split(":")[0].lower()
+    host = (parts.hostname or "").lower()
     if not host:
         return "no host"
     hint_apex, resource_apex = apex_domain(hinted), apex_domain(resource_url)
@@ -327,6 +332,43 @@ def _hint_rejection_reason(hinted: str, resource_url: str) -> str | None:
         return f"host {host!r} has no registrable domain"
     if hint_apex != resource_apex:
         return f"points at {hint_apex!r}, not the resource's own {resource_apex!r}"
+    return None
+
+
+def _issuer_rejection_reason(issuer: str) -> str | None:
+    """Why a declared issuer will not be requested, or None if it will be.
+
+    This is deliberately *not* `_hint_rejection_reason`. That one requires the target to
+    stay inside the resource's own registrable domain, which is right for a location the
+    resource nominates for its own metadata — and would be catastrophic here, because a
+    resource naming an issuer it does not operate is the entire subject of this study.
+    Applying the hint rule to issuers would silently discard every cross-operator edge,
+    which is the finding.
+
+    What is checked instead is only whether the target is a public host we are willing to
+    contact. `authorization_servers` is an arbitrary list under the measured operator's
+    control, and until 29 July 2026 the only filter was `scheme in ("https", "http")` with
+    a non-empty netloc — so a declared issuer of `http://127.0.0.1:8080` or an RFC 1918
+    literal was fetched, in plain text, from the measurement's own residential line. The
+    identical hole was closed for the `WWW-Authenticate` hint the same week and the larger
+    path was missed.
+
+    HTTPS is not an extra restriction here: MCP requires authorization-server endpoints to
+    be served over HTTPS, so an `http` issuer is already a C11 observation rather than
+    something to go and fetch.
+    """
+    from .collectors import apex_domain
+
+    parts = urlsplit(issuer)
+    if parts.scheme != "https":
+        return f"scheme is {parts.scheme!r}, not https"
+    host = (parts.hostname or "").lower()
+    if not host:
+        return "no host"
+    if apex_domain(issuer) is None:
+        # No registrable domain: loopback, RFC 1918 literals, bare IPs and special-use
+        # TLDs all land here, and none of them is a public authorization server.
+        return f"host {host!r} has no registrable domain"
     return None
 
 
@@ -594,7 +636,26 @@ async def probe_oauth(
     ambiguous: list[str] = []
     blocked: list[str] = []
 
-    for issuer in dict.fromkeys(ev.authorization_servers):   # same AS twice = one fetch
+    # The request budget stops being the measured party's to write here. Issuers that are
+    # not public HTTPS hosts are never contacted, and the number contacted for one endpoint
+    # is capped. Both classes stay in `authorization_servers` because a resource declaring
+    # `http://127.0.0.1` *is* a declared edge and belongs in the topology; what changes is
+    # that we record the declaration instead of following it.
+    declared_unique = list(dict.fromkeys(ev.authorization_servers))
+    fetchable: list[str] = []
+    for issuer in declared_unique:
+        reason = _issuer_rejection_reason(issuer)
+        if reason is not None:
+            ev.as_not_fetched[issuer] = reason
+        elif len(fetchable) < fetcher.config.rate.max_issuers_fetched_per_endpoint:
+            fetchable.append(issuer)
+        else:
+            ev.as_not_fetched[issuer] = (
+                f"beyond the {fetcher.config.rate.max_issuers_fetched_per_endpoint}-issuer "
+                f"per-endpoint request cap"
+            )
+
+    for issuer in fetchable:
         doc = None
         was_blocked = False
         for candidate in as_metadata_candidate_urls(issuer):
@@ -639,23 +700,37 @@ async def probe_oauth(
         add(CheckId.AS_CORRESPONDENCE, Outcome.FAIL_MISIMPLEMENTED, NormativeStrength.MUST,
             spec_ref="RFC 8414 3.3: issuer value MUST be identical to the issuer requested",
             spec_url=SPEC_RFC8414, observed_value="; ".join(mismatches))
-    elif unreachable and not observed:
-        add(CheckId.AS_CORRESPONDENCE, Outcome.FAIL_UNIMPLEMENTED, NormativeStrength.MUST,
-            spec_ref="RFC 8414 3", spec_url=SPEC_RFC8414,
-            observed_value="; ".join(unreachable),
-            detail="every declared issuer failed to serve metadata")
-    elif blocked and not observed:
+    elif blocked or ev.as_not_fetched:
+        # Anything we did not look at comes first, and the ordering is the whole point.
+        #
+        # This branch sat *below* `elif unreachable and not observed` for a few hours on
+        # 29 July 2026, which made it unreachable whenever any fetched issuer had failed.
+        # An adversarial review found the consequence by running it: eleven declared
+        # issuers, the first ten retired, the eleventh live and perfectly conformant but
+        # never requested because of our own cap, produced `FAIL_UNIMPLEMENTED` at MUST
+        # level with the detail "every declared issuer failed to serve metadata" -- a
+        # sentence contradicted by `as_not_fetched` in the same record. That is a false
+        # accusation against a conforming operator, produced by our scope policy, which is
+        # exactly the class of defect R4 and R6 exist to prevent and which this project had
+        # already fixed twice (robots exclusions, opt-outs).
+        #
+        # So: if any declared issuer was withheld from observation by our own choice, the
+        # verdict is our uncertainty. We cannot know what we did not ask.
+        not_observed = blocked + [f"{i} ({r})" for i, r in ev.as_not_fetched.items()]
         add(CheckId.AS_CORRESPONDENCE, Outcome.ERROR, NormativeStrength.MUST,
-            spec_url=SPEC_RFC8414, observed_value="; ".join(blocked),
-            detail="no declared issuer could be observed (R4)")
+            spec_url=SPEC_RFC8414, observed_value="; ".join(not_observed),
+            detail="one or more declared issuers were not observed (R4/R6): "
+                   f"{observed} of {len(ev.authorization_servers)} declared issuers seen")
     elif unreachable:
         # A resource that names five issuers of which four are dead is the thesis in
-        # miniature; scoring it PASS because one answered would discard the finding.
+        # miniature; scoring it PASS because one answered would discard the finding. The
+        # denominator is the issuers we actually requested -- counting ones we declined to
+        # request would put our own policy into the numerator of a MUST-level failure.
+        requested = len(unreachable) + observed
         add(CheckId.AS_CORRESPONDENCE, Outcome.FAIL_UNIMPLEMENTED, NormativeStrength.MUST,
             spec_ref="RFC 8414 3", spec_url=SPEC_RFC8414,
             observed_value="; ".join(unreachable),
-            detail=f"{len(unreachable)} of {len(ev.authorization_servers)} declared "
-                   f"issuers served no metadata")
+            detail=f"{len(unreachable)} of {requested} requested issuers served no metadata")
     elif ambiguous:
         add(CheckId.AS_CORRESPONDENCE, Outcome.UNSPECIFIED, NormativeStrength.MUST,
             spec_ref="RFC 8414 3.3", spec_url=SPEC_RFC8414,
@@ -678,7 +753,12 @@ async def probe_oauth(
         # already warns may stick at 100%. Both numbers are recorded so the analysis can
         # choose, and so the choice is visible.
         observed = len(ev.as_documents)
-        declared = len(dict.fromkeys(ev.authorization_servers)) or observed
+        # Issuers withheld by our own scope policy leave this denominator, for the same
+        # reason they leave C13's: we cannot report on what we declined to ask. Counting
+        # them made the cap move C16 -- R11.1's first-ranked headline candidate -- so ten
+        # conforming issuers scored PASS and eleven scored UNSPECIFIED.
+        declared = (len(dict.fromkeys(ev.authorization_servers))
+                    - len(ev.as_not_fetched)) or observed
 
         def _descriptive(check_id, present: list[str], strength, **kw) -> None:
             add(check_id,

@@ -234,3 +234,203 @@ async def test_a_hostile_hint_cannot_inject_an_edge_into_the_issuer_graph():
 
 def _outcome(checks, check_id):
     return next((c.outcome for c in checks if c.check_id == check_id), None)
+
+
+# --- the request budget is ours, not the measured party's ---------------------
+
+
+def _prm_mock(issuers: list[str]) -> None:
+    """A resource whose protected-resource metadata declares `issuers`.
+
+    Every issuer host is mocked as reachable, so that a host which is *not* contacted is
+    the instrument's decision rather than an artefact of the test setup.
+    """
+    respx.get(url__regex=r"https://[\w.-]+/robots\.txt").mock(
+        return_value=httpx.Response(404))
+    respx.get(url__regex=r"https://[\w.-]+/\.well-known/(oauth-authorization-server|"
+                         r"openid-configuration)").mock(
+        return_value=httpx.Response(200, json={"issuer": "https://unused.example.net"}))
+    respx.get(
+        "https://api.example.org/.well-known/oauth-protected-resource/mcp"
+    ).mock(return_value=httpx.Response(200, json={
+        "resource": "https://api.example.org/mcp", "authorization_servers": issuers,
+    }))
+
+
+def _initial() -> FetchResult:
+    return FetchResult(url="https://api.example.org/mcp", ok=True, status=401)
+
+
+@respx.mock
+async def test_a_declared_issuer_list_cannot_dictate_how_many_requests_we_send():
+    """`authorization_servers` is written by the host being measured.
+
+    Until 29 July 2026 the loop iterated it with no cap, at up to three candidate URLs
+    each, so a document declaring 200 issuers commanded 600 fetches aimed wherever it
+    liked. The bound in README.md and ETHICS.md was a sentence with no code behind it.
+    """
+    issuers = [f"https://idp{i:03d}.example.net" for i in range(60)]
+    _prm_mock(issuers)
+    seen: set[str] = set()
+
+    def record(result: FetchResult) -> None:
+        seen.add(result.url)
+
+    async with Fetcher(FAST, on_fetch=record) as f:
+        _, ev = await probe_oauth(f, "https://api.example.org/mcp", _initial())
+
+    cap = FAST.rate.max_issuers_fetched_per_endpoint
+    # Asserted against a literal, not against the configured value. Reading the cap out of
+    # config and checking consistency with it is self-referential: that version of this
+    # test passed with the cap set to 60, and would pass with it set to a million.
+    assert cap <= 25, "the per-endpoint issuer cap is no longer a meaningful bound"
+
+    contacted = {u.split("/.well-known")[0] for u in seen if "idp" in u}
+    assert len(contacted) == cap, f"contacted {len(contacted)} issuer hosts, cap is {cap}"
+    # Every declared issuer is still recorded: the declaration is the observation, and the
+    # resource -> issuer graph must not silently lose 50 edges because we declined to fetch.
+    assert len(ev.authorization_servers) == 60
+    assert len(ev.as_not_fetched) == 60 - cap
+
+
+@respx.mock
+async def test_we_never_request_a_declared_issuer_that_is_not_a_public_https_host():
+    """The SSRF-shaped half of the same defect.
+
+    The filter accepted any `http`/`https` URL with a netloc, so a declared issuer of
+    `http://127.0.0.1:8080` was fetched in plain text from the measurement's own
+    residential line. The identical hole was closed for the WWW-Authenticate hint in the
+    same week and this, much larger, path was missed.
+    """
+    hostile = [
+        "http://plain.example.net",          # not https
+        "https://127.0.0.1:8080",            # loopback
+        "https://10.0.0.5",                  # RFC 1918
+        "https://localhost:9000",            # special-use
+        "https://good.example.net",          # the only one we should touch
+    ]
+    _prm_mock(hostile)
+    seen: set[str] = set()
+
+    async with Fetcher(FAST, on_fetch=lambda r: seen.add(r.url)) as f:
+        _, ev = await probe_oauth(f, "https://api.example.org/mcp", _initial())
+
+    for forbidden in ("127.0.0.1", "10.0.0.5", "localhost", "plain.example.net"):
+        assert not any(forbidden in u for u in seen), f"requested {forbidden}"
+    assert set(ev.as_not_fetched) == set(hostile[:4])
+
+
+@respx.mock
+async def test_declining_to_look_is_never_written_up_as_the_operators_violation():
+    """R4/R6, in the branch added with the cap.
+
+    The robots and opt-out branches each shipped this bug once: our own policy produced a
+    MUST-level failure against the party we had chosen not to observe. The scope policy is
+    the same class of decision and must land in the same place.
+    """
+    _prm_mock(["https://127.0.0.1:8080", "https://10.0.0.5"])
+
+    async with Fetcher(FAST) as f:
+        checks, ev = await probe_oauth(f, "https://api.example.org/mcp", _initial())
+
+    outcome = next(c.outcome for c in checks if c.check_id is CheckId.AS_CORRESPONDENCE)
+    assert outcome is Outcome.ERROR, f"declining to look produced {outcome}"
+    assert not ev.as_documents
+
+
+@respx.mock
+async def test_a_cross_operator_issuer_is_still_fetched():
+    """The guard must not quietly delete the finding it exists beside.
+
+    A resource naming an issuer it does not operate is this study's entire subject, so the
+    issuer policy deliberately does not carry the hint rule's same-apex requirement. If it
+    did, every cross-operator edge would vanish and the headline would read 0%.
+    """
+    _prm_mock(["https://auth.somebodyelse.example.net"])
+    respx.get("https://auth.somebodyelse.example.net/robots.txt").mock(
+        return_value=httpx.Response(404))
+    respx.get(
+        "https://auth.somebodyelse.example.net/.well-known/oauth-authorization-server"
+    ).mock(return_value=httpx.Response(200, json={
+        "issuer": "https://auth.somebodyelse.example.net"}))
+
+    async with Fetcher(FAST) as f:
+        _, ev = await probe_oauth(f, "https://api.example.org/mcp", _initial())
+
+    assert "https://auth.somebodyelse.example.net" in ev.as_documents
+    assert not ev.as_not_fetched
+
+
+@respx.mock
+async def test_no_single_host_receives_more_than_the_published_ceiling():
+    """Capping issuers is not capping hosts, and the review proved the difference.
+
+    Ten declared issuers can be ten paths or ten ports on one machine. Measured before the
+    fix: 31 requests to that one host nominally, 91 with retries, 121 with a redirect chain.
+    Nothing accumulated across endpoints either, so 200 endpoints naming one popular issuer
+    delivered 401 requests to it -- and issuer concentration is one of this study's own
+    headline candidates, so the most-named host is by construction the most-hit host.
+
+    The ceiling is asserted against a literal. Reading it out of config would pass with the
+    ceiling set to a million, which is how the first version of the issuer-cap test passed
+    with the cap set to 60.
+    """
+    ceiling = FAST.rate.max_requests_per_host
+    assert ceiling <= 40, "the per-host ceiling is no longer a meaningful bound"
+
+    issuers = [f"https://one.example.net/t{i}" for i in range(10)]
+    _prm_mock(issuers)
+    respx.get(url__regex=r"https://one\.example\.net/.*").mock(
+        return_value=httpx.Response(404))
+
+    async with Fetcher(FAST) as f:
+        await probe_oauth(f, "https://api.example.org/mcp", _initial())
+        sent = dict(f._host_requests)
+
+    assert sent["one.example.net"] <= ceiling, (
+        f"one host received {sent['one.example.net']} requests, ceiling is {ceiling}"
+    )
+
+
+@respx.mock
+async def test_a_redirect_cannot_walk_out_of_the_public_web():
+    """The gate ran once, against the URL we chose, and then httpx followed three hops.
+
+    Measured before the fix: a declared issuer answering 302 to
+    `http://127.0.0.1:8080/admin/metadata` produced exactly that request -- plain text,
+    loopback, from a residential line -- and the response was stored as evidence and scored.
+    `169.254.169.254` behaved the same way, which on a cloud VM is the instance metadata
+    service, and this artefact ships under CC BY 4.0.
+    """
+    for target in ("http://127.0.0.1:8080/admin/metadata",
+                   "http://169.254.169.254/latest/meta-data/",
+                   "https://10.0.0.5/metadata"):
+        respx.clear()
+        # Registered before the catch-alls: respx resolves in registration order, so the
+        # redirect has to be declared first or a permissive mock answers instead of it and
+        # the test passes for the wrong reason.
+        respx.get(
+            url__regex=r"https://redir\.example\.net/\.well-known/.*"
+        ).mock(return_value=httpx.Response(302, headers={"Location": target}))
+        respx.get(url__regex=r"https?://.+/robots\.txt").mock(
+            return_value=httpx.Response(404))
+        respx.get("https://api.example.org/.well-known/oauth-protected-resource/mcp").mock(
+            return_value=httpx.Response(200, json={
+                "resource": "https://api.example.org/mcp",
+                "authorization_servers": ["https://redir.example.net"]}))
+        # The forbidden destinations are mocked as *available*, so that not reaching them is
+        # the instrument's refusal rather than an unroutable address.
+        respx.get(url__regex=r"https?://(127\.0\.0\.1|169\.254\.169\.254|10\.0\.0\.5).*").mock(
+            return_value=httpx.Response(200, json={"issuer": "https://redir.example.net"}))
+
+        seen: list[str] = []
+
+        def record(result: FetchResult, sink: list[str] = seen) -> None:
+            sink.append(result.url)
+
+        async with Fetcher(FAST, on_fetch=record) as f:
+            _, ev = await probe_oauth(f, "https://api.example.org/mcp", _initial())
+
+        assert not any(bad in u for u in seen
+                       for bad in ("127.0.0.1", "169.254", "10.0.0.5")), target
+        assert not ev.as_documents, f"a refused redirect produced evidence: {target}"

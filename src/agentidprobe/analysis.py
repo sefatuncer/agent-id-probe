@@ -510,6 +510,17 @@ def _relation_identical(a: str, b: str) -> bool:
 VARIANCE_FLOOR = 0.02
 VARIANCE_CEILING = 0.98
 
+# The widest cluster-robust interval a quantity may carry and still lead the paper.
+#
+# Fixed at ten points before any data existed, and the number is not arbitrary: the issuer
+# candidates are clustered on identity *products*, and at perfect intra-cluster correlation
+# -- the realistic case, since `iss` support is a property of the product rather than the
+# tenant -- +/-10pp needs about a hundred independent clusters. If the ecosystem turns out
+# to rest on a dozen IdPs, no issuer-level rate can be a headline, and the paper should say
+# that rather than publish +/-30pp as a finding. Declaring the threshold now is what makes
+# that outcome a result instead of a disappointment.
+MAX_HEADLINE_HALF_WIDTH = 0.10
+
 
 @dataclass
 class VarianceTest:
@@ -519,25 +530,45 @@ class VarianceTest:
 
 
 def passes_variance_test(estimate: ProportionEstimate) -> VarianceTest:
-    """Decision rule R11.2.
+    """Decision rule R11.2, as amended on 29 July 2026 before any data existed.
 
-    A candidate cannot be the paper's headline if its whole interval sits in [0, 2%] or in
-    [98%, 100%]: "essentially nobody" and "essentially everybody" are one-sentence findings,
-    not a paper. Applied to the cluster-robust interval, never the naive one, because the
-    naive one is too narrow to fail the test honestly.
+    A candidate cannot be the paper's headline if it is "essentially nobody" or
+    "essentially everybody" -- both are one-sentence findings -- or if it is too imprecise
+    to be a headline at all. Applied to the cluster-robust interval, never the naive one,
+    because the naive one is too narrow to fail the test honestly.
+
+    The precision gate and the point-estimate check were added after the rule was measured
+    against its own code and found to do almost nothing. Two results, both real:
+
+        m=60, k=59 -> 98.3% [95.0, 100.0] -> passed
+        m=15, k=8  -> 53.3% [24.7,  81.9] -> passed
+
+    The first is "essentially everybody" and the rule was written to reject it; it survived
+    because the interval reaches below the ceiling even though the estimate does not. The
+    second is an interval 57 points wide, which cannot lead a paper. Worse, the original
+    form was anti-conservative by construction: a *wider* interval escapes both bands more
+    easily, so imprecision made a candidate more likely to be chosen. A selection rule that
+    rewards not knowing is worse than no rule, because it launders the choice.
     """
     if estimate.n == 0:
         return VarianceTest(False, "no observations", estimate)
-    if estimate.hi <= VARIANCE_FLOOR:
+    half_width = (estimate.hi - estimate.lo) / 2
+    if half_width > MAX_HEADLINE_HALF_WIDTH:
         return VarianceTest(
-            False, f"interval [{estimate.lo:.3f}, {estimate.hi:.3f}] lies within "
-                   f"[0, {VARIANCE_FLOOR:.0%}]: essentially nobody", estimate)
-    if estimate.lo >= VARIANCE_CEILING:
+            False, f"interval [{estimate.lo:.3f}, {estimate.hi:.3f}] is +/-{half_width:.1%}, "
+                   f"wider than the +/-{MAX_HEADLINE_HALF_WIDTH:.0%} a headline may carry "
+                   f"(m={estimate.m})", estimate)
+    if estimate.hi <= VARIANCE_FLOOR or estimate.p_hat <= VARIANCE_FLOOR:
         return VarianceTest(
-            False, f"interval [{estimate.lo:.3f}, {estimate.hi:.3f}] lies within "
-                   f"[{VARIANCE_CEILING:.0%}, 1]: essentially everybody", estimate)
-    return VarianceTest(True, f"interval [{estimate.lo:.3f}, {estimate.hi:.3f}] shows variance",
-                        estimate)
+            False, f"{estimate.p_hat:.1%} [{estimate.lo:.3f}, {estimate.hi:.3f}] is at or "
+                   f"below {VARIANCE_FLOOR:.0%}: essentially nobody", estimate)
+    if estimate.lo >= VARIANCE_CEILING or estimate.p_hat >= VARIANCE_CEILING:
+        return VarianceTest(
+            False, f"{estimate.p_hat:.1%} [{estimate.lo:.3f}, {estimate.hi:.3f}] is at or "
+                   f"above {VARIANCE_CEILING:.0%}: essentially everybody", estimate)
+    return VarianceTest(
+        True, f"{estimate.p_hat:.1%} [{estimate.lo:.3f}, {estimate.hi:.3f}] shows variance "
+              f"at publishable precision (+/-{half_width:.1%}, m={estimate.m})", estimate)
 
 
 def select_headline(candidates: list[tuple[str, ProportionEstimate]]) -> tuple[str, str]:
@@ -555,3 +586,208 @@ def select_headline(candidates: list[tuple[str, ProportionEstimate]]) -> tuple[s
         "no rate candidate showed variance; the topology result is not a rate and is "
         "therefore not subject to the variance test",
     )
+
+
+# --- the issuer as a unit of analysis (R11.5) ----------------------------------
+#
+# R11.5 fixes the unit for headline candidates 1, 2 and 5 as the *unique issuer*, and
+# nothing here could express that until 29 July 2026: `rate_by_unit` reads a check outcome
+# off an endpoint report, and `_cluster_key` raises on any unit but endpoint/apex/
+# implementation. So the rule that selects the paper's headline -- and through R11.4 its
+# title -- had no implementation, while three status rounds recorded this layer as
+# finished. `select_headline` above had no caller anywhere in `src/`.
+#
+# The issuer level is built separately rather than forced through the report-shaped code,
+# because an issuer is not an endpoint: several endpoints declare the same issuer, one
+# endpoint declares several, and the observation lives in stored evidence rather than in a
+# CheckResult. Pretending otherwise would have produced a number that looked like R11.5
+# and was not.
+
+
+def issuer_documents(reports: list, denominator: str) -> dict[str, dict | None]:
+    """Every unique issuer in the population, mapped to its metadata document or None.
+
+    `denominator` is R11.5's choice and it is not cosmetic:
+
+    * ``"declared"`` -- every issuer any resource named. An issuer that never answered maps
+      to None and counts against the rate, because a client cannot use a defence it cannot
+      reach. This is the denominator for C16 and C17.
+    * ``"observed"`` -- only issuers whose document was retrieved. This is the denominator
+      for C18, where the question is what a reachable issuer chose to publish.
+
+    Both are computed for every candidate as the pre-declared sensitivity pair (R9.5), so
+    the choice above decides which one is the headline, not which one exists.
+    """
+    if denominator not in ("declared", "observed"):
+        raise ValueError(f"unknown denominator: {denominator}")
+
+    documents: dict[str, dict | None] = {}
+    for report in reports:
+        evidence = report.evidence or {}
+        as_documents = evidence.get("as_documents") or {}
+        for issuer in evidence.get("authorization_servers") or []:
+            if not isinstance(issuer, str):
+                continue
+            doc = as_documents.get(issuer)
+            if doc is None and denominator == "observed":
+                continue
+            # First document wins, deterministically: the same issuer serves the same
+            # document to every resource that names it, and if it does not, that is a
+            # finding for the topology rather than a reason to count the issuer twice.
+            documents.setdefault(issuer, doc if isinstance(doc, dict) else None)
+    return documents
+
+
+def issuer_rate(
+    reports: list, predicate, denominator: str, conf: float = 0.95
+) -> ProportionEstimate:
+    """A rate over unique issuers, clustered on the issuer's apex domain.
+
+    Clustering matters more here than anywhere else in this module, and in the opposite
+    direction to the endpoint rates: `iss` support is a property of an identity *product*,
+    so every tenant of one managed IdP answers identically. Treating those as independent
+    observations is how a study reports +/-4pp on a quantity it has really observed a dozen
+    times. The apex is the collectable proxy for the product; where it is unresolvable the
+    issuer forms its own cluster, which is the conservative direction.
+    """
+    documents = issuer_documents(reports, denominator)
+    buckets: dict[str, list[int]] = {}
+    for issuer, doc in documents.items():
+        key = _apex(issuer) or f"?{issuer}"
+        bucket = buckets.setdefault(key, [0, 0])
+        bucket[1] += 1
+        if predicate(doc):
+            bucket[0] += 1
+    return cluster_robust_proportion([(k, n) for k, n in buckets.values()], conf)
+
+
+def _advertises_iss(doc: dict | None) -> bool:
+    """C16 -- RFC 9207 §3. An unreachable issuer advertises nothing (R11.5)."""
+    return bool(doc) and doc.get("authorization_response_iss_parameter_supported") is True
+
+
+def _offers_client_bootstrap(doc: dict | None) -> bool:
+    """C17 -- CIMD or RFC 7591 registration, either usable by a non-interactive client."""
+    if not doc:
+        return False
+    return (doc.get("client_id_metadata_document_supported") is True
+            or isinstance(doc.get("registration_endpoint"), str))
+
+
+def _publishes_protected_resources(doc: dict | None) -> bool:
+    """C18 -- RFC 9728 §4. An empty list is not a published list: it enumerates nothing, so
+    §7.6's cross-check stays as impossible as if the member were absent."""
+    if not doc:
+        return False
+    listed = doc.get("protected_resources")
+    return isinstance(listed, list) and len(listed) > 0
+
+
+# --- R11 executed rather than described ----------------------------------------
+
+# The candidate list, in the order frozen by R11.1. Rank 3 is the topology, which is not a
+# rate and so is not in this list: R11.2 makes it the fallback when no rate qualifies, and
+# `select_headline` returns it in exactly that case. Nothing may be appended here after
+# collection begins.
+HEADLINE_CANDIDATES: tuple[tuple[int, str, str], ...] = (
+    (1, "C16 -- issuers advertising the RFC 9207 mix-up defence", "declared"),
+    (2, "C18 -- issuers publishing RFC 9728 §4 protected_resources", "observed"),
+    (4, "C12/C13 -- mechanical conformance of declared identifiers", "apex"),
+    (5, "C17 -- issuers offering non-interactive client bootstrap", "declared"),
+)
+
+
+def headline_candidates(reports: list, conf: float = 0.95) -> list[tuple[str, ProportionEstimate]]:
+    """R11.1's ranked candidates, each as an estimate the variance test can be applied to.
+
+    Rank 4 is reported at all three of R10.1's units, but the variance test needs one
+    estimate, and R11.5's table says "R10.1's three units" without saying which governs.
+    That gap is closed here in the only direction that is not a choice made later: the apex,
+    which R10.2 already fixes as the *primary* unit of analysis. The other two units are
+    still reported in full by `three_unit_table`; what is pinned here is only which one the
+    selection rule reads.
+    """
+    from .models import CheckId
+
+    c12 = rate_by_unit(reports, CheckId.PRM_RESOURCE_IDENTITY_MATCH, "apex", conf)
+    c13 = rate_by_unit(reports, CheckId.AS_CORRESPONDENCE, "apex", conf)
+    # The pair is one candidate under R11.1, so it needs one estimate. The weaker of the two
+    # governs: a resource whose identifier matches but whose issuer does not answer as
+    # itself has not given its clients a verifiable chain, and reporting the better half
+    # would be choosing the flattering number, which is the whole thing R11 forbids.
+    conformance = c12 if c12.p_hat <= c13.p_hat else c13
+
+    by_rank = {
+        1: issuer_rate(reports, _advertises_iss, "declared", conf),
+        2: issuer_rate(reports, _publishes_protected_resources, "observed", conf),
+        4: conformance,
+        5: issuer_rate(reports, _offers_client_bootstrap, "declared", conf),
+    }
+    return [(label, by_rank[rank]) for rank, label, _ in HEADLINE_CANDIDATES]
+
+
+def analyse(reports: list, conf: float = 0.95) -> dict:
+    """Everything R11 and R12 require, as one record written before the paper is touched.
+
+    The point is not convenience. R11.2 selects the headline, and a selection that happens
+    inside somebody's head while reading a summary is indistinguishable from choosing the
+    best number. Emitting the ranked candidates, each interval, each verdict and the reason
+    the winner won makes the selection an event with a transcript -- which is the only form
+    of it a reviewer can check.
+    """
+    from .models import CheckId
+
+    candidates = headline_candidates(reports, conf)
+    graph = build_delegation_graph(reports)
+    winner, reason = select_headline(candidates)
+
+    return {
+        "headline": {"selected": winner, "reason": reason},
+        "candidates": [
+            {
+                "rank": rank,
+                "label": label,
+                "denominator": denominator,
+                "estimate": estimate.as_record(),
+                "variance_test": {
+                    "passed": passes_variance_test(estimate).passed,
+                    "reason": passes_variance_test(estimate).reason,
+                },
+            }
+            for (rank, label, denominator), (_, estimate) in zip(
+                HEADLINE_CANDIDATES, candidates, strict=True
+            )
+        ],
+        # R9.5's sensitivity pair: the alternative denominator is printed for every issuer
+        # candidate, so that the pre-declared choice is visible next to what it excluded.
+        "sensitivity_alternative_denominator": {
+            "C16_observed": issuer_rate(reports, _advertises_iss, "observed", conf).as_record(),
+            "C18_declared": issuer_rate(
+                reports, _publishes_protected_resources, "declared", conf).as_record(),
+            "C17_observed": issuer_rate(
+                reports, _offers_client_bootstrap, "observed", conf).as_record(),
+        },
+        "topology": {
+            "concentration": graph.concentration(),
+            "relation": {
+                "same_operator": graph.same_operator,
+                "cross_operator": graph.cross_operator,
+                "unknown_operator": graph.unknown_operator,
+                "total": graph.total,
+            },
+            "cross_operator_rate": cluster_robust_proportion(
+                graph.cross_operator_clusters(), conf).as_record(),
+            "issuers_shared_across_apexes": len(graph.shared_across_apexes),
+        },
+        "cross_check": cross_check_feasibility(reports),
+        "three_unit": {
+            check.value: three_unit_table(reports, check, conf)
+            for check in (CheckId.PRM_PRESENT, CheckId.PRM_RESOURCE_IDENTITY_MATCH,
+                          CheckId.AS_CORRESPONDENCE)
+        },
+        "issuers": {
+            "declared": len(issuer_documents(reports, "declared")),
+            "observed": len(issuer_documents(reports, "observed")),
+        },
+        "endpoints": len(reports),
+    }

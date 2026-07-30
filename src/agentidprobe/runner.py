@@ -244,7 +244,10 @@ async def rescore(
     corpus = {e.endpoint_id: e for e in source.read_corpus()}
     stored = source.read_reports()
     artifacts = source.read_artifacts()
-    fetcher = ReplayFetcher(artifacts)
+    # The checks read policy off the fetcher (the per-endpoint issuer cap, for one), so a
+    # replay under a different configuration is scoring under different rules than the run
+    # it claims to reproduce. `config` was accepted here and dropped on the floor.
+    fetcher = ReplayFetcher(artifacts, config=config)
 
     destination.write_corpus(list(corpus.values()))
     out: list[EndpointReport] = []

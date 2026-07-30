@@ -25,8 +25,21 @@
 > A `WWW-Authenticate: resource_metadata` value is followed only when it is `https` and
 > stays within your own registrable domain.
 >
-> Nominally **6 requests across the entire study**; worst case 18 including timeouts and
-> retries; at most **1 request per second** per host. `Retry-After` is honoured.
+> **To your host:** nominally **7 requests across the entire study**; at most **21**
+> including timeouts and retries. If you also host an authorization server that your own
+> metadata points at, at most **10 more** for that server. At most **1 request per second**
+> per host, and `Retry-After` is honoured.
+>
+> **To anyone your metadata names:** if your protected-resource metadata declares
+> authorization servers on other hosts, we look up at most **10** of them, and only over
+> `https` to a public registrable domain. Declared issuers beyond that — and any pointing at
+> plain HTTP, loopback or private addresses — are recorded and never requested.
+>
+> **The hard ceiling, whatever any metadata says:** no host receives more than **30
+> requests per measurement pass** (60 across the study, which runs two passes), counting
+> redirects, retries and `robots.txt`. A redirect is followed only to an `https` URL with a
+> public registrable domain, and the opt-out list and `robots.txt` are re-checked on every
+> hop — so a redirect cannot carry us anywhere the paragraphs above say we will not go.
 >
 > **What we never do.** No authentication. No credentials. No OAuth flow, no token request,
 > no dynamic client registration. No MCP method call. No POST, PUT, PATCH or DELETE. No

@@ -42,6 +42,31 @@ class RatePolicy:
     honour_retry_after: bool = True
     # Hard stop: if a host returns this many consecutive 429/5xx, drop it for the run.
     host_failure_budget: int = 3
+    # The number of declared issuers whose metadata will be fetched for one endpoint.
+    #
+    # Without it the request budget is written by the measured party: `authorization_servers`
+    # is an arbitrary-length list under the operator's control, each entry costs up to three
+    # candidate URLs, and nothing bounded the product. A document declaring 200 issuers meant
+    # 600 fetches aimed wherever that document pointed. Ten is far above anything a real
+    # deployment needs -- the pilot's median was one -- so the cap costs no measurement while
+    # making the bound in README.md and ETHICS.md a property of the code rather than a hope.
+    # Issuers past the cap are recorded as declared and never requested.
+    max_issuers_fetched_per_endpoint: int = 10
+    # The total number of requests any one host will receive from one measurement pass.
+    #
+    # The issuer cap above bounds issuers, and an adversarial review showed that is not the
+    # same thing as bounding hosts: ten declared issuers may be ten paths or ports on one
+    # machine, which measured 31 requests nominally and 91 with retries. Worse, the cap is
+    # per endpoint and nothing accumulated across them, so 200 endpoints naming one popular
+    # issuer delivered 401 requests to it -- and issuer concentration is one of this study's
+    # own headline candidates, which means the most-named host is by construction the
+    # most-hit host.
+    #
+    # 30 is roughly four times the nominal per-host budget of 7, so it cannot fire on a
+    # normally-shaped deployment; it exists to stop the pathological ones. Counted per
+    # `Fetcher`, i.e. per pass, which is also the scope of the robots cache and the failure
+    # budget.
+    max_requests_per_host: int = 30
 
 
 @dataclass(frozen=True)

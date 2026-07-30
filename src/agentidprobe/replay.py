@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 from datetime import datetime
 
+from .config import DEFAULT_CONFIG, MeasurementConfig
 from .fetcher import ErrorKind, FetchResult
 from .models import TlsInfo
 
@@ -37,7 +38,14 @@ class ReplayFetcher:
     one endpoint replays in the order it was originally fetched.
     """
 
-    def __init__(self, artifacts: list[dict], *, strict: bool = True) -> None:
+    def __init__(self, artifacts: list[dict], *, strict: bool = True,
+                 config: MeasurementConfig = DEFAULT_CONFIG) -> None:
+        # The checks read policy off the fetcher -- the per-endpoint issuer cap, for one --
+        # so a replay must carry the same configuration or it is scoring under different
+        # rules than the run it claims to reproduce. If the cap has since changed, replay
+        # will ask for an artefact that was never stored and `strict` will say so, which is
+        # the correct outcome: a silent divergence would falsify R8's whole claim.
+        self.config = config
         self._by_key: dict[tuple[str, str], list[dict]] = {}
         for record in artifacts:
             key = (record.get("endpoint_id", ""), record.get("url", ""))

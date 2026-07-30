@@ -201,16 +201,39 @@ pretending otherwise would be worse than saying so. So notification is tiered:
 
 The realistic worst case is that a fragile endpoint is disturbed by our requests. Bounds:
 
-- Per host, **nominally 7 requests** across the whole run: `robots.txt` **twice** (the
-  measurement runs in two passes and each opens its own client), the endpoint itself, two
-  protected-resource metadata candidates, a `WWW-Authenticate`-hinted location, and one
+- Per measured host, **nominally 7 requests** across the whole run: `robots.txt` **twice**
+  (the measurement runs in two passes and each opens its own client), the endpoint itself,
+  two protected-resource metadata candidates, a `WWW-Authenticate`-hinted location, and one
   agent-card probe at the origin.
-- **Up to 10** where a declared authorization server is hosted on the same host as the
-  resource — which MCP explicitly permits ("it may be hosted with the resource server") —
-  because up to three further well-known candidates are then tried against that same host.
-- **Worst case 21, or 30 in the co-hosted case**, because a URL that times out is retried
-  at most three times (`max_retries = 2`) with exponential backoff. Operators are owed the
-  worst case, not the nominal one.
+- **Worst case 21**, because a URL that times out is retried at most three times
+  (`max_retries = 2`) with exponential backoff. Operators are owed the worst case, not the
+  nominal one.
+- Per **declared issuer** host: `robots.txt` plus at most three well-known candidates, so
+  **nominally 4**.
+- **A hard per-host ceiling of 30 requests per pass** (`RatePolicy.max_requests_per_host`),
+  counting redirect hops, retries and `robots.txt`. The issuer cap below bounds *issuers*,
+  and an adversarial review measured the difference: ten declared issuers may be ten paths
+  or ports on one machine, which produced 31 requests nominally, 91 with retries and 121
+  with a redirect chain — and because the cap was per endpoint with nothing accumulating
+  across them, 200 endpoints naming one popular issuer delivered 401 requests to it. Since
+  issuer concentration is one of this study's own reported quantities, the most-named host is
+  by construction the most-hit host, so an aggregate bound is not optional.
+- **Redirects are re-gated on every hop.** Until 30 July 2026 the opt-out list, `robots.txt`
+  and the scheme check ran once against the URL we chose, and up to three redirects then went
+  wherever the response pointed: a declared issuer answering `302` to
+  `http://127.0.0.1:8080` produced exactly that request. A hop is now followed only to an
+  `https` URL with a public registrable domain, and every gate is re-applied. Where the issuer is co-hosted with the
+  resource — which MCP explicitly permits (*"it may be hosted with the resource server"*) —
+  those requests land on the same host and add to the figures above.
+- **At most 10 declared issuers are looked up for any one endpoint**
+  (`RatePolicy.max_issuers_fetched_per_endpoint`), and only where the issuer is an `https`
+  URL with a public registrable domain. This bound was added on 29 July 2026 and the
+  paragraph it replaced was **false**: `authorization_servers` is an arbitrary-length list
+  written by the measured party, the code iterated all of it, and nothing stopped a
+  document that declared two hundred issuers from commanding six hundred requests aimed
+  wherever it chose. The same defect accepted plain `http`, loopback and RFC 1918 targets.
+  Issuers we decline to request are recorded as declared and never contacted, and that
+  decision is scored as our uncertainty, never as the operator's non-conformance.
 - At most 1 request per second per host, with a global concurrency cap.
 - A per-host failure budget (3 consecutive failures) drops a host that is failing.
 - **Global stopping rule, with the actual number:** after the first **50** endpoints, if

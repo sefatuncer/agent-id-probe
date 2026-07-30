@@ -1,0 +1,302 @@
+{
+  "candidates": [
+    {
+      "denominator": "declared",
+      "estimate": {
+        "ci_hi": 0.9054689622725727,
+        "ci_lo": 0.09453103772742738,
+        "deff": null,
+        "k": 1,
+        "m": 1,
+        "method": "wilson (single cluster: no between-cluster variance to estimate)",
+        "n": 2,
+        "n_eff": null,
+        "naive_ci_hi": 0.9054689622725727,
+        "naive_ci_lo": 0.09453103772742738,
+        "p_hat": 0.5
+      },
+      "label": "C16 -- issuers advertising the RFC 9207 mix-up defence",
+      "rank": 1,
+      "variance_test": {
+        "passed": true,
+        "reason": "interval [0.095, 0.905] shows variance"
+      }
+    },
+    {
+      "denominator": "observed",
+      "estimate": {
+        "ci_hi": 0.7934510822973669,
+        "ci_lo": 0.0,
+        "deff": null,
+        "k": 0,
+        "m": 1,
+        "method": "wilson (single cluster: no between-cluster variance to estimate)",
+        "n": 1,
+        "n_eff": null,
+        "naive_ci_hi": 0.7934510822973669,
+        "naive_ci_lo": 0.0,
+        "p_hat": 0.0
+      },
+      "label": "C18 -- issuers publishing RFC 9728 \u00a74 protected_resources",
+      "rank": 2,
+      "variance_test": {
+        "passed": true,
+        "reason": "interval [0.000, 0.793] shows variance"
+      }
+    },
+    {
+      "denominator": "apex",
+      "estimate": {
+        "ci_hi": 1.0,
+        "ci_lo": 0.20654891770263312,
+        "deff": null,
+        "k": 1,
+        "m": 1,
+        "method": "wilson (single cluster: no between-cluster variance to estimate)",
+        "n": 1,
+        "n_eff": null,
+        "naive_ci_hi": 1.0,
+        "naive_ci_lo": 0.20654891770263312,
+        "p_hat": 1.0
+      },
+      "label": "C12/C13 -- mechanical conformance of declared identifiers",
+      "rank": 4,
+      "variance_test": {
+        "passed": true,
+        "reason": "interval [0.207, 1.000] shows variance"
+      }
+    },
+    {
+      "denominator": "declared",
+      "estimate": {
+        "ci_hi": 0.6576203174655877,
+        "ci_lo": 0.0,
+        "deff": null,
+        "k": 0,
+        "m": 1,
+        "method": "wilson (single cluster: no between-cluster variance to estimate)",
+        "n": 2,
+        "n_eff": null,
+        "naive_ci_hi": 0.6576203174655877,
+        "naive_ci_lo": 0.0,
+        "p_hat": 0.0
+      },
+      "label": "C17 -- issuers offering non-interactive client bootstrap",
+      "rank": 5,
+      "variance_test": {
+        "passed": true,
+        "reason": "interval [0.000, 0.658] shows variance"
+      }
+    }
+  ],
+  "cross_check": {
+    "cross_check_passes": 0,
+    "cross_check_possible": 0,
+    "issuers": 1
+  },
+  "endpoints": 4,
+  "headline": {
+    "reason": "interval [0.095, 0.905] shows variance",
+    "selected": "C16 -- issuers advertising the RFC 9207 mix-up defence"
+  },
+  "issuers": {
+    "declared": 2,
+    "observed": 1
+  },
+  "sensitivity_alternative_denominator": {
+    "C16_observed": {
+      "ci_hi": 1.0,
+      "ci_lo": 0.20654891770263312,
+      "deff": null,
+      "k": 1,
+      "m": 1,
+      "method": "wilson (single cluster: no between-cluster variance to estimate)",
+      "n": 1,
+      "n_eff": null,
+      "naive_ci_hi": 1.0,
+      "naive_ci_lo": 0.20654891770263312,
+      "p_hat": 1.0
+    },
+    "C17_observed": {
+      "ci_hi": 0.7934510822973669,
+      "ci_lo": 0.0,
+      "deff": null,
+      "k": 0,
+      "m": 1,
+      "method": "wilson (single cluster: no between-cluster variance to estimate)",
+      "n": 1,
+      "n_eff": null,
+      "naive_ci_hi": 0.7934510822973669,
+      "naive_ci_lo": 0.0,
+      "p_hat": 0.0
+    },
+    "C18_declared": {
+      "ci_hi": 0.6576203174655877,
+      "ci_lo": 0.0,
+      "deff": null,
+      "k": 0,
+      "m": 1,
+      "method": "wilson (single cluster: no between-cluster variance to estimate)",
+      "n": 2,
+      "n_eff": null,
+      "naive_ci_hi": 0.6576203174655877,
+      "naive_ci_lo": 0.0,
+      "p_hat": 0.0
+    }
+  },
+  "three_unit": {
+    "C05": {
+      "apex": {
+        "ci_hi": 1.0,
+        "ci_lo": 0.20654891770263312,
+        "deff": null,
+        "k": 1,
+        "m": 1,
+        "method": "wilson (single cluster: no between-cluster variance to estimate)",
+        "n": 1,
+        "n_eff": null,
+        "naive_ci_hi": 1.0,
+        "naive_ci_lo": 0.20654891770263312,
+        "p_hat": 1.0
+      },
+      "endpoint": {
+        "ci_hi": 1.0,
+        "ci_lo": 0.4385023722934154,
+        "deff": null,
+        "k": 3,
+        "m": 1,
+        "method": "wilson (single cluster: no between-cluster variance to estimate)",
+        "n": 3,
+        "n_eff": null,
+        "naive_ci_hi": 1.0,
+        "naive_ci_lo": 0.4385023722934154,
+        "p_hat": 1.0
+      },
+      "implementation": {
+        "ci_hi": 1.0,
+        "ci_lo": 1.0,
+        "deff": null,
+        "k": 2,
+        "m": 2,
+        "method": "cluster-robust t(1)",
+        "n": 2,
+        "n_eff": null,
+        "naive_ci_hi": 1.0,
+        "naive_ci_lo": 0.3423796825344123,
+        "p_hat": 1.0
+      }
+    },
+    "C12": {
+      "apex": {
+        "ci_hi": 1.0,
+        "ci_lo": 0.20654891770263312,
+        "deff": null,
+        "k": 1,
+        "m": 1,
+        "method": "wilson (single cluster: no between-cluster variance to estimate)",
+        "n": 1,
+        "n_eff": null,
+        "naive_ci_hi": 1.0,
+        "naive_ci_lo": 0.20654891770263312,
+        "p_hat": 1.0
+      },
+      "endpoint": {
+        "ci_hi": 0.9385081625962584,
+        "ci_lo": 0.20765929483487988,
+        "deff": null,
+        "k": 2,
+        "m": 1,
+        "method": "wilson (single cluster: no between-cluster variance to estimate)",
+        "n": 3,
+        "n_eff": null,
+        "naive_ci_hi": 0.9385081625962584,
+        "naive_ci_lo": 0.20765929483487988,
+        "p_hat": 0.6666666666666666
+      },
+      "implementation": {
+        "ci_hi": 1.0,
+        "ci_lo": 1.0,
+        "deff": null,
+        "k": 2,
+        "m": 2,
+        "method": "cluster-robust t(1)",
+        "n": 2,
+        "n_eff": null,
+        "naive_ci_hi": 1.0,
+        "naive_ci_lo": 0.3423796825344123,
+        "p_hat": 1.0
+      }
+    },
+    "C13": {
+      "apex": {
+        "ci_hi": 1.0,
+        "ci_lo": 0.20654891770263312,
+        "deff": null,
+        "k": 1,
+        "m": 1,
+        "method": "wilson (single cluster: no between-cluster variance to estimate)",
+        "n": 1,
+        "n_eff": null,
+        "naive_ci_hi": 1.0,
+        "naive_ci_lo": 0.20654891770263312,
+        "p_hat": 1.0
+      },
+      "endpoint": {
+        "ci_hi": 0.9385081625962584,
+        "ci_lo": 0.20765929483487988,
+        "deff": null,
+        "k": 2,
+        "m": 1,
+        "method": "wilson (single cluster: no between-cluster variance to estimate)",
+        "n": 3,
+        "n_eff": null,
+        "naive_ci_hi": 0.9385081625962584,
+        "naive_ci_lo": 0.20765929483487988,
+        "p_hat": 0.6666666666666666
+      },
+      "implementation": {
+        "ci_hi": 1.0,
+        "ci_lo": 0.0,
+        "deff": 2.0,
+        "k": 1,
+        "m": 2,
+        "method": "cluster-robust t(1)",
+        "n": 2,
+        "n_eff": 1.0,
+        "naive_ci_hi": 0.9054689622725727,
+        "naive_ci_lo": 0.09453103772742738,
+        "p_hat": 0.5
+      }
+    }
+  },
+  "topology": {
+    "concentration": {
+      "effective_issuers": 1.7999999999999998,
+      "hhi": 0.5555555555555556,
+      "issuers": 2,
+      "top1_share": 0.6666666666666666,
+      "top3_share": 1.0,
+      "top5_share": 1.0
+    },
+    "cross_operator_rate": {
+      "ci_hi": 0.5614976277065846,
+      "ci_lo": 0.0,
+      "deff": null,
+      "k": 0,
+      "m": 1,
+      "method": "wilson (single cluster: no between-cluster variance to estimate)",
+      "n": 3,
+      "n_eff": null,
+      "naive_ci_hi": 0.5614976277065846,
+      "naive_ci_lo": 0.0,
+      "p_hat": 0.0
+    },
+    "issuers_shared_across_apexes": 0,
+    "relation": {
+      "cross_operator": 0,
+      "same_operator": 3,
+      "total": 3,
+      "unknown_operator": 0
+    }
+  }
+}
