@@ -113,6 +113,23 @@ class Scope:
         "registry.smithery.ai",
     })
 
+    # How many endpoints on one hostname are measured. See `runner.sample_per_host`.
+    #
+    # The request ceiling above is a promise about load; this is the sampling rule that
+    # keeps the ceiling from turning into silent data loss. The corpus is 7,681 hostnames,
+    # but `gateway.pipeworx.io` carries 1,281 endpoints and 2,015 sit on the eleven
+    # hostnames holding more than thirty each. At 2-6 requests per endpoint the ceiling is
+    # spent after a handful of them, so without this rule roughly a fifth of the corpus
+    # would have come back `OUT_OF_SCOPE`, counted as unreachable, and aborted the run.
+    #
+    # 25 sits just below the 30-request ceiling so that the sample is chosen by this rule
+    # rather than by whichever endpoint happened to exhaust the budget first -- the
+    # selection stays deterministic and explainable instead of being an artefact of
+    # scheduling order. It is also far above the point of diminishing returns: a thousand
+    # registry listings on one hostname are one deployment, which R10.2b already collapses
+    # to a single implementation cluster.
+    max_endpoints_per_host: int = 25
+
     wellknown_paths: tuple[str, ...] = (
         "/.well-known/agent-card.json",
         "/.well-known/oauth-protected-resource",

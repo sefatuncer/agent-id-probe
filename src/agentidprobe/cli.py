@@ -34,7 +34,14 @@ from .config import DEFAULT_CONFIG, PROBE_VERSION
 from .fetcher import Fetcher
 from .models import Modality, RunContext
 from .replay import compare_reports
-from .runner import Runner, derive_card_endpoints, rehearsal_slice, rescore, summarise
+from .runner import (
+    Runner,
+    derive_card_endpoints,
+    rehearsal_slice,
+    rescore,
+    sample_per_host,
+    summarise,
+)
 from .store import RunStore
 
 
@@ -125,6 +132,32 @@ async def _cmd_probe(args: argparse.Namespace) -> int:
         # which correlates with the very property the rehearsal measures.
         endpoints = rehearsal_slice(endpoints, args.sample)
         print(f"rehearsal slice: {len(endpoints)} endpoints, one per apex before two from any")
+
+    # The frame is the corpus on disk; this is the sample drawn from it. Reported here and
+    # written to the manifest, because an exclusion nobody can count is an exclusion nobody
+    # can check -- see `sample_per_host` for why the alternative was silent data loss.
+    frame_size = len(endpoints)
+    endpoints, not_sampled = sample_per_host(
+        endpoints, DEFAULT_CONFIG.scope.max_endpoints_per_host)
+    if not_sampled:
+        dropped = sum(not_sampled.values())
+        print(f"per-host sampling: {len(endpoints)}/{frame_size} endpoints measured; "
+              f"{dropped} not sampled on {len(not_sampled)} hostname(s) over the "
+              f"{DEFAULT_CONFIG.scope.max_endpoints_per_host}-endpoint cap")
+        for host, count in sorted(not_sampled.items(), key=lambda kv: -kv[1])[:5]:
+            print(f"    {host}: {count} not sampled")
+    # Written whether or not anything was excluded, so that "no file" means "this run
+    # predates the rule" rather than "nothing was dropped" -- two states the exclusion
+    # ledger in the results section must not confuse.
+    (store.run_dir / "sampling.json").write_text(
+        json.dumps({
+            "rule": "sample_per_host",
+            "max_endpoints_per_host": DEFAULT_CONFIG.scope.max_endpoints_per_host,
+            "frame_endpoints": frame_size,
+            "sampled_endpoints": len(endpoints),
+            "not_sampled_total": sum(not_sampled.values()),
+            "not_sampled_by_host": dict(sorted(not_sampled.items())),
+        }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     runner = Runner(store, DEFAULT_CONFIG)
     print(f"probing {len(endpoints)} MCP endpoints "

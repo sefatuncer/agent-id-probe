@@ -40,6 +40,9 @@ only one a reader can check.*
 
 | Date | Rule | Amendment | Rationale |
 |---|---|---|---|
+| 2026-07-30 | **R10.6** | **New** — endpoints on one hostname are **sampled**, at most 25, chosen deterministically by `endpoint_id`; the remainder is a named, counted exclusion. **R10.5 is qualified**: the census claim stays exact at the hostname, apex and implementation units and is no longer exact at the endpoint unit | Found by the narrow-slice rehearsal, before the census. The 30-request per-host ceiling and the shape of the corpus are incompatible: 2,015 of 10,653 endpoints sit on eleven hostnames, one of which carries 1,281. At two to six requests each the ceiling was spent after a handful, the rest returned `OUT_OF_SCOPE` with `reachable=False`, and about a fifth of the corpus would have been counted as unreachable — enough to trip the abort and blame the ecosystem for our own configuration. Raising the ceiling would have sent one operator some 7,700 requests, which is what it was added to prevent. Sampling costs a claim (at the endpoint unit this is a census of hostnames and a sample within the large ones) and the paper states it; the frame is preserved in `corpus.jsonl`, so the sampling fraction stays checkable |
+| 2026-07-30 | **R4 / ETHICS §10** | Robots-excluded endpoints **leave the kill switch's failure counter**, and are counted separately | The same rehearsal measured it rather than arguing it: 17 of 198 endpoints were excluded by `robots.txt`, which was 8.6 of the 15.2 percentage points the switch was reading. §10 defines its threshold over endpoints that were *"unreachable or blocked"*, and a robots exclusion is neither — we reached the host, read its rules, and chose not to ask. Identical in form to the opt-out fix of 29 July, on the branch that was missed then. With Okta and Auth0 both serving `Disallow: /` (ETHICS §6.1), a stratum heavy in hosted identity platforms could have aborted the census on a property of the ecosystem |
+| 2026-07-30 | **R4 / R5** | A transport failure on the endpoint fetch now scores **`ERROR`**, not `NOT_APPLICABLE` | Found in the pre-flight `dry-run`. With no response there is no 401, so every MUST stage took the composition branch and recorded *"authorization is OPTIONAL in MCP and this endpoint did not require it"* against a host we never reached. R5 makes `ERROR` the set the second run reconciles; `NOT_APPLICABLE` is not in it, so a transiently-failing endpoint would have been booked as one that does not use authorization and the confirmation run would never have been pointed at it. No rate moves — both outcomes leave every denominator — but the stored record now says what happened |
 | 2026-07-27 | R1–R8 | Initial freeze (commit `7d865d5`) | After the pilot, before the main run |
 | 2026-07-28 | R8 | Human coders + Cohen's kappa → fixture suite + replay determinism (commit `df1613b`) | Kappa is the instrument of designs that score a rubric; this instrument is mechanical and there is no subjectivity to measure |
 | 2026-07-28 | **R9** | **New** — identifier comparison policy | Three-agent review: C12's expected value was derived wrongly and C12/C13 had opposite strictness. Running without a written comparison policy would have left the headline violation rate to an unwritten judgement call |
@@ -679,6 +682,50 @@ None of the three sources of uncertainty reported is sampling error:
   licenses **no** generalisation beyond the frame. Uncertainty about registered endpoints is
   not uncertainty about deployed ones; the frame's relationship to the ecosystem is a
   limitation, not an interval.
+
+**Qualified by R10.6 the same day.** The census claim above is exact at the hostname, apex and
+implementation units and **no longer exact at the endpoint unit**: R10.6 caps the endpoints
+measured on any one hostname at 25. Every hostname in the frame is still enumerated, so
+point 1 above is untouched — the unit that varies is the operator, not the listing, and the
+capped hostnames are precisely those where the extra listings carry no extra realisation. But
+the first binding consequence has to be read with that in mind: an endpoint count is a count
+over the sample, the sampling fraction is recorded in `sampling.json` and derivable from
+`corpus.jsonl`, and a rate at the endpoint unit is reported with the exclusion beside it.
+
+---
+
+### R10.6 — Endpoints on one hostname are sampled, and the remainder is a named exclusion
+
+**New, 30 July 2026, written before the census and after the narrow-slice rehearsal.**
+
+At most **25** endpoints per hostname are measured, chosen by ascending `endpoint_id` — a
+SHA-256 prefix of the URL, so the choice is deterministic, independent of registry pagination
+order, and reproducible without a stored seed, as R8 requires. Endpoints beyond the cap are
+**not attempted**. They are counted per hostname, written to `sampling.json`, and reported in
+the exclusion ledger as *not sampled*: a decision of ours, never an observation of an operator.
+
+**Why the rule exists.** `RatePolicy.max_requests_per_host` caps one host at 30 requests per
+pass, which is the promise this study makes to third parties who never consented to being
+probed. The rehearsal showed that promise and the corpus are incompatible as configured:
+10,653 endpoints sit on 7,681 hostnames, but 2,015 of them are on the eleven hostnames with
+more than thirty each, and `gateway.pipeworx.io` alone carries 1,281. An endpoint costs two to
+six requests, so the ceiling is spent after a handful and every endpoint after that returns
+`OUT_OF_SCOPE` with `reachable=False`. Roughly a fifth of the corpus would have been recorded
+as unreachable, the abort would very likely have fired, and its message would have attributed
+our own configuration to the ecosystem.
+
+**Why not simply raise the ceiling.** It would deliver one operator some 7,700 requests, which
+is the outcome the ceiling was introduced to prevent. Sampling sends *fewer* requests than the
+ceiling alone would have allowed, because the instrument stops asking rather than asking and
+being refused.
+
+**What it costs, stated plainly.** At the endpoint unit this is a census of hostnames and a
+sample within the large ones. The paper says so rather than describing the result as a census
+without qualification. Nothing is hidden: `corpus.jsonl` is written before sampling and holds
+the complete frame, so any reader can recompute the fraction. At the apex and implementation
+units — R10.2 and R10.2b, and the primary unit is the apex — the rule changes nothing, because
+a thousand registry listings answering from one hostname are one deployment and one
+configuration decision, which is the premise R10.1 was built on.
 
 ---
 

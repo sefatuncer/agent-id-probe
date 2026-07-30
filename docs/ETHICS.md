@@ -272,6 +272,15 @@ The realistic worst case is that a fragile endpoint is disturbed by our requests
   decision is scored as our uncertainty, never as the operator's non-conformance.
 - At most 1 request per second per host, with a global concurrency cap.
 - A per-host failure budget (3 consecutive failures) drops a host that is failing.
+- **At most 25 endpoints on any one hostname are measured at all**
+  (`Scope.max_endpoints_per_host`, decision rule R10.6). The corpus is far more concentrated
+  than the request ceiling assumed: 2,015 of 10,653 endpoints sit on eleven hostnames, and
+  one carries 1,281. Without this rule the instrument would have attempted every one of them,
+  spent the 30-request ceiling after a handful, and recorded the rest as failures of the
+  operator rather than limits of ours. Sampling means **fewer** requests reach that operator
+  than the ceiling alone permitted, because we stop asking rather than asking and being
+  refused. The endpoints not sampled are counted per hostname, written to `sampling.json`,
+  and reported — a decision of ours never gets to look like an observation of theirs.
 - **Global stopping rule, with the actual number:** after the first **50** endpoints, if
   the cumulative fraction of endpoints that were unreachable or blocked exceeds **25%**,
   the run aborts and is investigated before resuming. Implemented in `Runner`
@@ -283,6 +292,17 @@ The realistic worst case is that a fragile endpoint is disturbed by our requests
   > rejects, a broken vantage point. Those look acceptable host by host and unmistakable in
   > aggregate. Past that threshold the measurement is describing our own reception rather
   > than the ecosystem, and continuing would collect data we could not defend.
+  >
+  > **Neither opt-outs nor robots exclusions feed this counter**, and the second half of
+  > that was measured rather than assumed. The rehearsal on 30 July 2026 found 30 of 198
+  > endpoints unreachable, **17 of them because of `robots.txt`** — our own politeness was
+  > 8.6 of the 15.2 percentage points the switch was reading. The threshold above is defined
+  > over endpoints that were *unreachable or blocked*, and a robots exclusion is neither: we
+  > reached the host, read its rules, and chose not to ask. Since Okta and Auth0 both serve
+  > `Disallow: /` (§6.1), leaving it in place would have let a stratum of hosted identity
+  > platforms abort the census while the abort message blamed our reception — an inversion
+  > of the exact thing this rule exists to detect. Both exclusions are counted and reported
+  > separately instead.
 - The run is supervised. It is not scheduled to execute unattended.
 
 ## 11. Preconditions — the run does not start until all are true

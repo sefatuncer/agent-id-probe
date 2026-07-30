@@ -609,6 +609,106 @@ def test_endpoints_with_no_resolvable_apex_each_count_as_their_own_operator():
     assert len({e.endpoint_id for e in chosen}) == 5
 
 
+# --- the per-host ceiling must not become silent data loss --------------------
+
+
+def test_a_bulk_host_is_sampled_rather_than_attempted_and_lost():
+    """The finding that stopped the census on 30 July 2026, before it started.
+
+    `RatePolicy.max_requests_per_host` caps one host at 30 requests per pass. An endpoint
+    costs two to six of those, and the corpus puts 1,281 endpoints on `gateway.pipeworx.io`
+    with 2,015 across the eleven hostnames over thirty each. So the ceiling would have been
+    spent after a handful, the remaining ~1,270 would have returned `OUT_OF_SCOPE` with
+    `reachable=False`, the kill switch would have read a fifth of the corpus as unreachable,
+    and the abort message would have blamed the ecosystem for our own configuration.
+
+    Sampling first is both the honest repair and the kinder one: fewer requests reach the
+    operator than the ceiling alone would have allowed, because we stop asking rather than
+    asking and being refused.
+    """
+    from agentidprobe.runner import sample_per_host
+
+    endpoints = (
+        [_corpus_endpoint(f"https://gateway.bulk.example.com/mcp/{i}", "bulk.example.com")
+         for i in range(1281)]
+        + [_corpus_endpoint(f"https://op{i}.example.org/mcp", f"op{i}.example.org")
+           for i in range(40)]
+    )
+    sampled, excluded = sample_per_host(endpoints, 25)
+
+    assert len(sampled) == 25 + 40
+    assert excluded == {"gateway.bulk.example.com": 1281 - 25}
+    assert sum(1 for e in sampled
+               if "gateway.bulk.example.com" in e.url) == 25
+    assert all(f"op{i}.example.org" in {e.apex_domain for e in sampled} for i in range(40)), (
+        "hosts under the cap must be untouched"
+    )
+
+
+def test_the_sample_is_deterministic_and_leaves_small_hosts_in_corpus_order():
+    """R8 needs the same corpus to yield the same sample, without a stored seed.
+
+    Selection is by `endpoint_id`, a SHA-256 prefix of the URL — the same reason the
+    rehearsal slice uses it. Corpus order is preserved for everything else so that a run
+    over a corpus with no large hosts is byte-identical to one taken before this rule.
+    """
+    from agentidprobe.runner import sample_per_host
+
+    endpoints = [_corpus_endpoint(f"https://big.example.com/mcp/{i}", "big.example.com")
+                 for i in range(60)]
+    first, _ = sample_per_host(endpoints, 25)
+    again, _ = sample_per_host(list(reversed(endpoints)), 25)
+    assert {e.endpoint_id for e in first} == {e.endpoint_id for e in again}, (
+        "the sample must not depend on the order the registry happened to paginate in"
+    )
+
+    small = [_corpus_endpoint(f"https://op{i}.example.org/mcp", f"op{i}.example.org")
+             for i in range(10)]
+    unchanged, excluded = sample_per_host(small, 25)
+    assert unchanged == small, "a corpus with no large host must pass through untouched"
+    assert excluded == {}
+
+
+def test_a_robots_exclusion_does_not_push_the_run_toward_its_kill_switch(tmp_path):
+    """ETHICS.md §10 sets the threshold over endpoints that were "unreachable or blocked".
+
+    A robots exclusion is neither: we reached the host, read its rules, and chose not to
+    ask. This is the branch that was missed when the identical opt-out case was fixed on
+    29 July 2026 — and the rehearsal measured its size rather than leaving it theoretical.
+    17 of 198 endpoints were excluded by robots.txt, which was 8.6 of the 15.2 percentage
+    points the switch was reading. Since Okta and Auth0 both serve `Disallow: /`, a census
+    stratum heavy in hosted identity platforms could have aborted the run on a property of
+    the ecosystem while the message blamed our reception.
+    """
+    from datetime import UTC, datetime
+
+    from agentidprobe.models import EndpointReport
+
+    store = RunStore(tmp_path, "r")
+    runner = Runner(store, MeasurementConfig(
+        abort=AbortPolicy(min_endpoints_before_abort=10, max_failure_fraction=0.25)))
+
+    def report(url, *, robots_allowed=True, reachable=True):
+        return EndpointReport(
+            endpoint=_endpoint(url), modality=Modality.OAUTH_METADATA,
+            reachable=reachable, robots_allowed=robots_allowed,
+            probed_at=datetime.now(UTC), run_id="r")
+
+    for i in range(40):
+        runner._observe_outcome(report(f"https://blocked{i}.example.org/mcp",
+                                       robots_allowed=False, reachable=False))
+    for i in range(20):
+        runner._observe_outcome(report(f"https://fine{i}.example.org/mcp"))
+
+    assert runner._aborted is False, "our own robots policy tripped the kill switch"
+    assert runner._robots_excluded == 40, "and the exclusions must still be counted"
+
+    # It must still fire on the thing it is actually for.
+    for i in range(20):
+        runner._observe_outcome(report(f"https://dead{i}.example.org/mcp", reachable=False))
+    assert runner._aborted is True
+
+
 # --- a host that never answered has not told us anything ----------------------
 
 

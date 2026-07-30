@@ -92,6 +92,68 @@ def rehearsal_slice(endpoints: list, size: int) -> list:
     return chosen
 
 
+def sample_per_host(endpoints: list, cap: int) -> tuple[list, dict[str, int]]:
+    """Bound how many endpoints on one hostname are measured. Returns (sampled, excluded).
+
+    Written on 30 July 2026, after the narrow-slice rehearsal showed the census could not
+    run as configured. The corpus is 10,653 endpoints on 7,681 hostnames, but the shape is
+    extremely uneven: `gateway.pipeworx.io` alone carries 1,281 of them, and 2,015 endpoints
+    sit on the 11 hostnames with more than 30 each.
+
+    `RatePolicy.max_requests_per_host` caps one host at 30 requests per pass, which is the
+    right promise to a third party who never consented to being probed. But an endpoint
+    costs two to six requests, so on the largest host the ceiling is spent after roughly
+    five to fifteen endpoints and the remaining ~1,270 come back `OUT_OF_SCOPE` with
+    `reachable=False` -- which the kill switch reads as failure. Around a fifth of the
+    corpus would have been recorded as unreachable because of our own configuration, the
+    abort would have fired, and its message would have blamed the ecosystem.
+
+    Raising the ceiling is the wrong repair: it would send one operator some 7,700 requests,
+    which is what the ceiling was added to prevent. So the endpoints are sampled instead of
+    being attempted and lost, and the difference matters in three ways.
+
+    * **The unmeasured ones are named.** They leave as a counted, reported exclusion with a
+      reason, not as several thousand indistinguishable errors. Every denominator rule in
+      this instrument exists to stop our own policy moving a published rate silently.
+    * **It costs almost nothing.** A thousand registry listings on one hostname are one
+      deployment answering a thousand times; R10.2b's implementation fingerprint already
+      treats them as one cluster, and the primary unit of analysis is the apex.
+    * **It is the kinder option.** Fewer requests reach the operator than the ceiling alone
+      would have allowed, because we stop asking rather than asking and being refused.
+
+    What it costs is a claim: at the endpoint unit this is a census of hostnames and a
+    sample within the large ones, and the paper has to say so. The frame is not lost -- the
+    full corpus is written to `corpus.jsonl` before this runs -- so the sampling fraction is
+    recoverable by anyone who reads the artefact.
+
+    Selection is by `endpoint_id` (a SHA-256 prefix of the URL) for the same reason the
+    rehearsal slice uses it: deterministic, independent of registry order, reproducible
+    without a stored seed, which R8 requires.
+    """
+    if cap <= 0:
+        return list(endpoints), {}
+
+    by_host: dict[str, list] = {}
+    for endpoint in endpoints:
+        host = urlsplit(endpoint.url).hostname or urlsplit(endpoint.url).netloc
+        by_host.setdefault(host, []).append(endpoint)
+
+    sampled: list = []
+    excluded: dict[str, int] = {}
+    for host, group in by_host.items():
+        if len(group) <= cap:
+            sampled.extend(group)
+            continue
+        group.sort(key=lambda e: e.endpoint_id)
+        sampled.extend(group[:cap])
+        excluded[host] = len(group) - cap
+
+    # Corpus order is otherwise preserved, so a run without large hosts is unchanged.
+    order = {e.endpoint_id: i for i, e in enumerate(endpoints)}
+    sampled.sort(key=lambda e: order[e.endpoint_id])
+    return sampled, excluded
+
+
 def derive_card_endpoints(endpoints: list[Endpoint]) -> list[Endpoint]:
     """One agent-card candidate per distinct origin in the OAuth corpus."""
     now = datetime.now(UTC)
@@ -150,6 +212,10 @@ class Runner:
         self._seen = 0
         self._failed = 0
         self._skipped = 0
+        # Counted, not folded away: the exclusions our own policy caused are a number the
+        # paper reports, not a silence.
+        self._robots_excluded = 0
+        self._not_sampled = 0
 
     def _observe_outcome(self, report: EndpointReport) -> None:
         """The global kill switch of docs/ETHICS.md 10.
@@ -164,6 +230,23 @@ class Runner:
         if report.opted_out:
             # An operator who asked to be left alone is not evidence that the run is going
             # badly. Counting them here would let the opt-out list itself trip the abort.
+            return
+        if not report.robots_allowed:
+            # The same argument, on the branch that was missed when the opt-out one was
+            # added on 29 July 2026. A robots exclusion is not an endpoint we failed to
+            # reach: we reached the host, read its rules, and chose not to ask. ETHICS.md 10
+            # defines this threshold over endpoints that were "unreachable or blocked", and
+            # a robots exclusion is neither.
+            #
+            # Measured in the narrow-slice rehearsal on 30 July 2026 rather than argued:
+            # 30 of 198 endpoints were unreachable, 17 of them because of robots.txt. Our
+            # own politeness policy was 8.6 of the 15.2 percentage points the kill switch
+            # was reading -- more than half. Since Okta and Auth0 both serve `Disallow: /`
+            # (ETHICS.md 6.1), a stratum heavy in hosted identity platforms could abort the
+            # census on a property of the ecosystem while the abort message blamed our
+            # reception. That inversion is the exact failure this threshold exists to catch,
+            # so letting it fire that way would have been worse than not having it.
+            self._robots_excluded += 1
             return
         self._seen += 1
         if not report.reachable:
