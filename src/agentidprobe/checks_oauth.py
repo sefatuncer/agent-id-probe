@@ -566,27 +566,45 @@ async def probe_oauth(
             spec_ref="MCP: endpoints MUST be served over HTTPS", spec_url=SPEC_MCP,
             observed_value=urlsplit(resource_url).scheme)
 
-    if not ev.requires_authorization:
-        for cid in _MUST_STAGES:
-            add(cid, Outcome.NOT_APPLICABLE, NormativeStrength.MUST,
-                detail="authorization is OPTIONAL in MCP and this endpoint did not require it",
-                spec_ref="MCP Authorization", spec_url=SPEC_MCP)
-        add(CheckId.PKCE_DECLARED, Outcome.NOT_APPLICABLE, NormativeStrength.SHOULD,
-            detail="authorization is OPTIONAL in MCP and this endpoint did not require it",
-            spec_ref="MCP Authorization", spec_url=SPEC_MCP)
-        return checks, ev
-
-    # C07 - discovery hint. Strength is SHOULD until the MCP clause is confirmed, so R1
-    # keeps it incapable of producing a failure either way.
-    add(
-        CheckId.WWW_AUTH_RESOURCE_METADATA,
-        Outcome.PASS if ev.www_authenticate and "resource_metadata" in ev.www_authenticate
-        else Outcome.UNSPECIFIED,
-        NormativeStrength.SHOULD,
-        spec_ref="MCP Authorization, discovery",
-        spec_url=SPEC_MCP,
-        observed_value=ev.www_authenticate,
-    )
+    # The metadata is looked for whether or not the endpoint challenged us, and the reason
+    # is R10.7. Until 30 July 2026 this function returned here unless the endpoint answered
+    # 401 or 403, so a challenge was the only way an endpoint could enter the OAuth funnel
+    # at all.
+    #
+    # The rehearsal showed what that discarded. Of 164 reachable endpoints, 50 challenged
+    # and 59 answered `405 Method Not Allowed` or 406 -- a server that routes on HTTP method
+    # before it consults authorization, so our GET never reached the layer being measured.
+    # The undetermined group was larger than the denominator, and it was not a random slice
+    # of the corpus: membership was decided by a framework's middleware order.
+    #
+    # `scripts/measure_method_gate.py` then asked those endpoints for the metadata directly
+    # (docs/method-gate-probe.json): 11 of the 59 publish protected-resource metadata, as do
+    # 16 of the 32 that answered 200, against 37 of the 50 that challenged -- the control
+    # group, which confirms the probe works. So 27 endpoints were declaring an authorization
+    # server, in a document at a well-known path, while the instrument recorded them as
+    # endpoints that do not use authorization and never looked.
+    #
+    # What changes is only what we *observe*. The verdicts are untouched: an endpoint that
+    # neither challenged nor publishes metadata is still NOT_APPLICABLE, because
+    # authorization is genuinely OPTIONAL in MCP and counting composition as failure is the
+    # error this funnel was rebuilt to avoid. C05 can still only convict an endpoint that
+    # challenged. What grows is the population carrying C12 and C13 -- the decisive checks,
+    # whose denominator is *documents we have read* rather than a posture we inferred, and
+    # which are therefore immune to this bias in a way C05 is not. In the rehearsal that
+    # population goes from 36 to roughly 64.
+    if ev.requires_authorization:
+        # C07 - discovery hint. Strength is SHOULD until the MCP clause is confirmed, so R1
+        # keeps it incapable of producing a failure either way. Only a challenge can carry
+        # this header, so it is not emitted at all for the endpoints admitted above.
+        add(
+            CheckId.WWW_AUTH_RESOURCE_METADATA,
+            Outcome.PASS if ev.www_authenticate and "resource_metadata" in ev.www_authenticate
+            else Outcome.UNSPECIFIED,
+            NormativeStrength.SHOULD,
+            spec_ref="MCP Authorization, discovery",
+            spec_url=SPEC_MCP,
+            observed_value=ev.www_authenticate,
+        )
 
     # C05 - protected-resource metadata. Both well-known forms are tried; probing only
     # the root form would manufacture failures for correctly configured servers.
@@ -642,6 +660,27 @@ async def probe_oauth(
             break
 
     if prm_doc is None:
+        if not ev.requires_authorization:
+            # No challenge and no document: this endpoint has shown no sign of using
+            # authorization at all, and MCP makes authorization OPTIONAL. Convicting it
+            # would count composition as non-conformance, which is the error that separates
+            # "36.7% publish metadata" from the finding this paper actually argues.
+            #
+            # This is the branch the pre-30-July code reached by returning before the fetch.
+            # The verdict is identical; what differs is that it is now reached *after*
+            # looking, so an endpoint that publishes metadata without ever challenging is
+            # measured rather than assumed away. The distinction is worth 27 of 164
+            # endpoints in the rehearsal (docs/method-gate-probe.json).
+            for cid in _MUST_STAGES:
+                add(cid, Outcome.NOT_APPLICABLE, NormativeStrength.MUST,
+                    detail="no challenge and no metadata: authorization is OPTIONAL in MCP "
+                           "and this endpoint shows no sign of using it",
+                    spec_ref="MCP Authorization", spec_url=SPEC_MCP)
+            add(CheckId.PKCE_DECLARED, Outcome.NOT_APPLICABLE, NormativeStrength.SHOULD,
+                detail="no challenge and no metadata: authorization is OPTIONAL in MCP "
+                       "and this endpoint shows no sign of using it",
+                spec_ref="MCP Authorization", spec_url=SPEC_MCP)
+            return checks, ev
         if malformed is not None:
             # R3: 200 with an unparseable body is misimplementation, not absence.
             add(CheckId.PRM_PRESENT, Outcome.FAIL_MISIMPLEMENTED, NormativeStrength.MUST,

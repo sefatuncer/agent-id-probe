@@ -26,10 +26,12 @@ from .collectors import apex_domain, classify_hosting, endpoint_id
 from .config import PROBE_VERSION, MeasurementConfig
 from .fetcher import ErrorKind, Fetcher, FetchResult
 from .models import (
+    CheckResult,
     Endpoint,
     EndpointKind,
     EndpointReport,
     Modality,
+    Outcome,
 )
 from .replay import ArtefactMissing, ReplayFetcher
 from .store import RunStore
@@ -203,6 +205,30 @@ def _report_from(
     )
 
 
+def _error_report(
+    endpoint: Endpoint, modality: Modality, run_id: str, exc: BaseException
+) -> EndpointReport:
+    """A report for an endpoint whose probe raised, so that it stays in the ledger.
+
+    An unexpected exception is a fault in the instrument, not an observation of the operator,
+    so every check it would have emitted is `ERROR` under R4 and the endpoint leaves every
+    denominator — the same treatment as a block or a robots exclusion. What it must not do is
+    leave the record, which is what happened before this existed.
+    """
+    from .models import FUNNELS, NormativeStrength
+
+    detail = f"not observed: the probe raised {type(exc).__name__}: {exc}"[:500]
+    checks = [
+        CheckResult(check_id=check, outcome=Outcome.ERROR,
+                    normative_strength=NormativeStrength.MUST, detail=detail)
+        for _, check in FUNNELS[modality][1:] if check is not None
+    ]
+    return EndpointReport(
+        endpoint=endpoint, modality=modality, reachable=False,
+        checks=checks, probed_at=datetime.now(UTC), run_id=run_id,
+    )
+
+
 class Runner:
     def __init__(self, store: RunStore, config: MeasurementConfig) -> None:
         self.store = store
@@ -346,6 +372,24 @@ class Runner:
                         self._observe_outcome(report)
                         results.append(report)
                     except Exception as exc:  # noqa: BLE001 - one bad host must not end the run
+                        # Keeping the run alive is right; letting the endpoint disappear is
+                        # not, and until 30 July 2026 that is what happened -- no report was
+                        # written, so the endpoint was absent from `reports.jsonl` entirely.
+                        # Not counted, not excluded, not errored: simply not there, with one
+                        # printed line as the only trace. Every denominator in `summarise`
+                        # is computed over the reports, so a dropped endpoint shrinks the
+                        # total silently, which is the failure mode the denominator rules
+                        # exist to prevent.
+                        #
+                        # Demonstrated rather than theorised: regenerating the synthetic
+                        # example run after R10.7 turned four reports into three, because
+                        # one case's mock did not describe a request the instrument had
+                        # newly begun to make. Nothing failed. Only R8's replay check
+                        # noticed, and only because it compares against stored artefacts.
+                        report = _error_report(endpoint, modality, self.store.run_id, exc)
+                        self.store.append_report(report)
+                        self._observe_outcome(report)
+                        results.append(report)
                         print(f"  ! {endpoint.url}: {type(exc).__name__}: {exc}")
                     finally:
                         completed += 1

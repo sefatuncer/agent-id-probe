@@ -609,6 +609,115 @@ def test_endpoints_with_no_resolvable_apex_each_count_as_their_own_operator():
     assert len({e.endpoint_id for e in chosen}) == 5
 
 
+# --- an endpoint whose probe crashes must not leave the ledger -----------------
+
+
+def test_an_endpoint_whose_probe_raises_stays_in_the_record(tmp_path):
+    """Keeping the run alive is right; letting the endpoint disappear is not.
+
+    The blanket handler in `run()` printed a line and wrote nothing, so the endpoint was
+    absent from `reports.jsonl` entirely — not counted, not excluded, not errored. Every
+    denominator in `summarise` is computed over the reports, so a dropped endpoint shrinks
+    the total silently.
+
+    Demonstrated rather than theorised on 30 July 2026: regenerating the synthetic example
+    run after R10.7 turned four reports into three, because one case's mock did not describe
+    a request the instrument had newly begun to make. Nothing failed loudly. Only R8's replay
+    check noticed, and only because it compares against stored artefacts.
+    """
+    class _Exploding(Runner):
+        async def _probe_one(self, fetcher, endpoint, modality):
+            raise RuntimeError("synthetic fault in the instrument")
+
+    store = RunStore(tmp_path, "r")
+    runner = _Exploding(store, FAST)
+    endpoints = [_endpoint(f"https://op{i}.example.org/mcp") for i in range(3)]
+    reports = asyncio.run(runner.run(endpoints, Modality.OAUTH_METADATA))
+
+    assert len(reports) == 3, "every endpoint must produce a record, even a bad one"
+    assert len(store.read_reports()) == 3, "and it must reach disk, not just the return value"
+    for report in reports:
+        assert report.reachable is False
+        assert all(c.outcome is Outcome.ERROR for c in report.checks)
+        assert "RuntimeError" in " ".join(c.detail for c in report.checks if c.detail)
+
+    # It leaves every denominator, exactly as a block or a robots exclusion does.
+    funnel = summarise(reports)["modalities"]["oauth_metadata"]["funnel"]
+    assert funnel[0]["n"] == 0
+    assert funnel[0]["excluded"]["error"] == 3
+
+
+# --- a challenge is not the only way to learn that an endpoint uses OAuth ------
+
+
+@respx.mock
+async def test_an_endpoint_that_never_challenged_is_still_measured_if_it_publishes_metadata():
+    """R10.7, and the rehearsal finding that produced it.
+
+    Until 30 July 2026 `probe_oauth` returned before requesting anything unless the endpoint
+    answered 401 or 403, so a challenge was the only door into the OAuth funnel. Of 164
+    reachable endpoints in the rehearsal, 50 challenged and 59 answered `405 Method Not
+    Allowed` or 406 — a server that routes on HTTP method before consulting authorization,
+    so our GET never reached the layer under measurement. The undetermined group was larger
+    than the denominator, and membership in it was decided by a framework's middleware order
+    rather than by anything about authorization.
+
+    `scripts/measure_method_gate.py` asked them directly: 11 of the 59 publish
+    protected-resource metadata, and 16 of the 32 that answered 200 do as well, against 37
+    of the 50 that challenged. So 27 endpoints were declaring an authorization server in a
+    document at a well-known path while the instrument recorded them as not using
+    authorization and never looked.
+    """
+    respx.get("https://quiet-example.org/robots.txt").mock(return_value=httpx.Response(404))
+    respx.get("https://quiet-example.org/.well-known/oauth-protected-resource/mcp").mock(
+        return_value=httpx.Response(200, json={
+            "resource": "https://quiet-example.org/mcp",
+            "authorization_servers": ["https://idp-example.net"]}))
+    respx.get("https://idp-example.net/robots.txt").mock(return_value=httpx.Response(404))
+    respx.get("https://idp-example.net/.well-known/oauth-authorization-server").mock(
+        return_value=httpx.Response(200, json={"issuer": "https://idp-example.net"}))
+
+    async with Fetcher(FAST) as f:
+        # 405 is the shape that matters: the request never reached the authorization layer.
+        initial = FetchResult(url="https://quiet-example.org/mcp", ok=True, status=405)
+        checks, ev = await probe_oauth(f, "https://quiet-example.org/mcp", initial)
+
+    assert ev.requires_authorization is False, "it genuinely did not challenge us"
+    assert _outcome(checks, CheckId.PRM_PRESENT) is Outcome.PASS
+    assert _outcome(checks, CheckId.PRM_RESOURCE_IDENTITY_MATCH) is Outcome.PASS
+    assert _outcome(checks, CheckId.AS_CORRESPONDENCE) is Outcome.PASS, (
+        "the decisive checks must now reach an endpoint that only a document revealed"
+    )
+    assert ev.authorization_servers == ["https://idp-example.net"]
+
+
+@respx.mock
+async def test_silence_plus_no_metadata_is_still_composition_and_never_a_failure():
+    """The other half, unchanged, and the half that must not move.
+
+    Authorization is OPTIONAL in MCP. An endpoint that neither challenged nor publishes
+    metadata has shown no sign of using it, and convicting it would count composition as
+    non-conformance — the error that separates "36.7% publish metadata" from the finding
+    this paper argues. Widening what we *observe* must not widen what we *penalise*, and
+    C05 can still only convict an endpoint that challenged.
+    """
+    respx.get("https://open-example.org/robots.txt").mock(return_value=httpx.Response(404))
+    respx.get("https://open-example.org/.well-known/oauth-protected-resource/mcp").mock(
+        return_value=httpx.Response(404))
+    respx.get("https://open-example.org/.well-known/oauth-protected-resource").mock(
+        return_value=httpx.Response(404))
+
+    async with Fetcher(FAST) as f:
+        initial = FetchResult(url="https://open-example.org/mcp", ok=True, status=405)
+        checks, _ = await probe_oauth(f, "https://open-example.org/mcp", initial)
+
+    for check_id in (CheckId.PRM_PRESENT, CheckId.PRM_RESOURCE_IDENTITY_MATCH,
+                     CheckId.AS_CORRESPONDENCE, CheckId.PKCE_DECLARED):
+        assert _outcome(checks, check_id) is Outcome.NOT_APPLICABLE, (
+            f"{check_id} penalised an endpoint that never opted into authorization"
+        )
+
+
 # --- a response that never ends must not hold the run -------------------------
 
 

@@ -93,8 +93,19 @@ def _mock() -> None:
         return_value=httpx.Response(404))
 
     # 4. Open server: authorization is OPTIONAL in MCP, so nothing here is a failure.
+    #
+    # The metadata locations are answered 404 explicitly. Under R10.7 the instrument asks
+    # for them even when the endpoint never challenged, so "publishes nothing" is now an
+    # observation this case has to describe rather than a request it never provoked. Leaving
+    # them unmocked did not fail loudly: respx raised, the runner's blanket "one bad host
+    # must not end the run" handler caught it, and the endpoint vanished from the example
+    # run -- four reports became three, and only the R8 replay check noticed.
     respx.get("https://open.example.org/mcp").mock(
         return_value=httpx.Response(200, json={"ok": True}))
+    respx.get("https://open.example.org/.well-known/oauth-protected-resource/mcp").mock(
+        return_value=httpx.Response(404))
+    respx.get("https://open.example.org/.well-known/oauth-protected-resource").mock(
+        return_value=httpx.Response(404))
 
 
 @respx.mock

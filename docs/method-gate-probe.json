@@ -1,0 +1,355 @@
+{
+  "groups": {
+    "answered_200": {
+      "asked": 32,
+      "declaring_at_least_one_issuer": 15,
+      "endpoints": 32,
+      "excluded_by_our_policy": 0,
+      "hits": [
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://gateway.pipeworx.io/ocrspace/mcp",
+          "prm_url": "https://gateway.pipeworx.io/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://doxa.app/mcp/v1",
+          "prm_url": "https://doxa.app/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mkdshare.dev/mcp",
+          "prm_url": "https://mkdshare.dev/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://studiomcphub.com/mcp",
+          "prm_url": "https://studiomcphub.com/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.korey.ai/mcp",
+          "prm_url": "https://mcp.korey.ai/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.openhelm.ai/seo/mcp",
+          "prm_url": "https://mcp.openhelm.ai/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://quintadb.com.ua/mcp",
+          "prm_url": "https://quintadb.com.ua/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 0,
+          "endpoint": "https://x402.fiasignals.com/mcp",
+          "prm_url": "https://x402.fiasignals.com/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.screenshotink.com/mcp",
+          "prm_url": "https://mcp.screenshotink.com/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://kuickr.co/mcp",
+          "prm_url": "https://kuickr.co/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.getuserfeedback.com/",
+          "prm_url": "https://mcp.getuserfeedback.com/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.windowsforum.com",
+          "prm_url": "https://mcp.windowsforum.com/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://tooloracle.io/ecommerce/mcp/",
+          "prm_url": "https://tooloracle.io/.well-known/oauth-protected-resource/ecommerce/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.mcpbundles.com/bundle/uk-legislation/",
+          "prm_url": "https://mcp.mcpbundles.com/.well-known/oauth-protected-resource/bundle/uk-legislation"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://api.marketintell.ai/mcp/sse",
+          "prm_url": "https://api.marketintell.ai/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.puter.com/",
+          "prm_url": "https://mcp.puter.com/.well-known/oauth-protected-resource"
+        }
+      ],
+      "publish_prm": 16,
+      "rate": 0.5
+    },
+    "challenged_401": {
+      "asked": 50,
+      "declaring_at_least_one_issuer": 36,
+      "endpoints": 50,
+      "excluded_by_our_policy": 0,
+      "hits": [
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://agentview.de/mcp",
+          "prm_url": "https://agentview.de/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://aicommander.dev/mcp",
+          "prm_url": "https://aicommander.dev/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://api.openbudget.sh/mcp",
+          "prm_url": "https://api.openbudget.sh/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.axiom.co/sse",
+          "prm_url": "https://mcp.axiom.co/.well-known/oauth-protected-resource/sse"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.getomnier.com/mcp",
+          "prm_url": "https://mcp.getomnier.com/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.clarigrid.energy/mcp",
+          "prm_url": "https://mcp.clarigrid.energy/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.brain-tube.com/mcp",
+          "prm_url": "https://mcp.brain-tube.com/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://wan.mcp.acedata.cloud/mcp",
+          "prm_url": "https://wan.mcp.acedata.cloud/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://api.signalpipe.io/mcp",
+          "prm_url": "https://api.signalpipe.io/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://app-eu.snoooz.ai/mcp",
+          "prm_url": "https://app-eu.snoooz.ai/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.meuvelmo.com/mcp",
+          "prm_url": "https://mcp.meuvelmo.com/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.scribe-mail.com/mcp",
+          "prm_url": "https://mcp.scribe-mail.com/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://api.trydango.com/mcp",
+          "prm_url": "https://api.trydango.com/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.onlyoffice.com/mcp",
+          "prm_url": "https://mcp.onlyoffice.com/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.enigma.com/sse",
+          "prm_url": "https://mcp.enigma.com/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://gateway.ansvar.eu/eu/mcp",
+          "prm_url": "https://gateway.ansvar.eu/.well-known/oauth-protected-resource/eu/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.bodenrichtwert.ai/mcp",
+          "prm_url": "https://mcp.bodenrichtwert.ai/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.stackwitness.com/mcp",
+          "prm_url": "https://mcp.stackwitness.com/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://metriport.usefulapi.io/mcp",
+          "prm_url": "https://metriport.usefulapi.io/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.deepledger.ai/mcp",
+          "prm_url": "https://mcp.deepledger.ai/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://api.acquislaw.com/mcp",
+          "prm_url": "https://api.acquislaw.com/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.aiakiv.com/mcp",
+          "prm_url": "https://mcp.aiakiv.com/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://api.scraps.kitchen/mcp",
+          "prm_url": "https://api.scraps.kitchen/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.justonce.ai",
+          "prm_url": "https://mcp.justonce.ai/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.nowen.ai/api/mcp",
+          "prm_url": "https://mcp.nowen.ai/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://devopsagent.io/mcp/",
+          "prm_url": "https://devopsagent.io/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.close.com/mcp",
+          "prm_url": "https://mcp.close.com/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.adtao.io/mcp",
+          "prm_url": "https://mcp.adtao.io/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.taplio.com",
+          "prm_url": "https://mcp.taplio.com/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://brainbox-mcp.thexi.dev/mcp",
+          "prm_url": "https://brainbox-mcp.thexi.dev/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://taokeh.my/mcp",
+          "prm_url": "https://taokeh.my/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://gcal.mintmcp.com/mcp",
+          "prm_url": "https://gcal.mintmcp.com/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://www.mdtidy.com/mcp",
+          "prm_url": "https://www.mdtidy.com/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.traderwai.com",
+          "prm_url": "https://mcp.traderwai.com/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.catchmetrics.io",
+          "prm_url": "https://mcp.catchmetrics.io/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 0,
+          "endpoint": "https://mcp.almanac.ar/mcp",
+          "prm_url": "https://mcp.almanac.ar/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.appsflyer.com/auth/mcp",
+          "prm_url": "https://mcp.appsflyer.com/.well-known/oauth-protected-resource/auth/mcp"
+        }
+      ],
+      "publish_prm": 37,
+      "rate": 0.74
+    },
+    "method_gated": {
+      "asked": 59,
+      "declaring_at_least_one_issuer": 11,
+      "endpoints": 59,
+      "excluded_by_our_policy": 0,
+      "hits": [
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://api.gachi-tokusuru.com/mcp",
+          "prm_url": "https://api.gachi-tokusuru.com/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://cellarion.app/api/mcp/public",
+          "prm_url": "https://cellarion.app/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://www.supersaas.com/mcp",
+          "prm_url": "https://www.supersaas.com/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://studio.pixelixe.com/api/mcp/v1",
+          "prm_url": "https://studio.pixelixe.com/.well-known/oauth-protected-resource/api/mcp/v1"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://api.cross-deck.com/mcp",
+          "prm_url": "https://api.cross-deck.com/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.dreamlit.ai/mcp",
+          "prm_url": "https://mcp.dreamlit.ai/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://junifye.publifye.pro/mcp",
+          "prm_url": "https://junifye.publifye.pro/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://mcp.serpdive.com/mcp",
+          "prm_url": "https://mcp.serpdive.com/.well-known/oauth-protected-resource/mcp"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://pullboard.dev/mcp",
+          "prm_url": "https://pullboard.dev/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://api.wassel.cloud/mcp",
+          "prm_url": "https://api.wassel.cloud/.well-known/oauth-protected-resource"
+        },
+        {
+          "declares_issuers": 1,
+          "endpoint": "https://waystation.ai/gmail/mcp/sse",
+          "prm_url": "https://waystation.ai/.well-known/oauth-protected-resource"
+        }
+      ],
+      "publish_prm": 11,
+      "rate": 0.1864
+    }
+  },
+  "run_id": "slice2"
+}

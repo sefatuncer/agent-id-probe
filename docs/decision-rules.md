@@ -40,6 +40,7 @@ only one a reader can check.*
 
 | Date | Rule | Amendment | Rationale |
 |---|---|---|---|
+| 2026-07-30 | **R10.7** | **New** — protected-resource metadata is requested for **every reachable endpoint**, not only for those that answered 401/403 | The rehearsal found that a challenge was the only entry into the OAuth funnel, and that the group it excluded was **larger than the denominator**: 50 endpoints challenged, 59 answered `405`/`406`, and 32 answered 200. Asking those groups directly (`docs/method-gate-probe.json`) found **27 endpoints declaring an authorization server** in a document at a well-known path while the instrument recorded them as not using authorization. Membership in the excluded group is decided by a framework's middleware order — a selection whose direction cannot be signed. Verdicts are unchanged and C05 can still only convict an endpoint that challenged; defining the denominator as "challenged **or** publishes metadata" is circular for C05 and is refused. What grows is the population carrying C12/C13, whose denominator is documents read rather than posture inferred: 36 → ~64 in the rehearsal |
 | 2026-07-30 | **R10.6** | **New** — endpoints on one hostname are **sampled**, at most 25, chosen deterministically by `endpoint_id`; the remainder is a named, counted exclusion. **R10.5 is qualified**: the census claim stays exact at the hostname, apex and implementation units and is no longer exact at the endpoint unit | Found by the narrow-slice rehearsal, before the census. The 30-request per-host ceiling and the shape of the corpus are incompatible: 2,015 of 10,653 endpoints sit on eleven hostnames, one of which carries 1,281. At two to six requests each the ceiling was spent after a handful, the rest returned `OUT_OF_SCOPE` with `reachable=False`, and about a fifth of the corpus would have been counted as unreachable — enough to trip the abort and blame the ecosystem for our own configuration. Raising the ceiling would have sent one operator some 7,700 requests, which is what it was added to prevent. Sampling costs a claim (at the endpoint unit this is a census of hostnames and a sample within the large ones) and the paper states it; the frame is preserved in `corpus.jsonl`, so the sampling fraction stays checkable |
 | 2026-07-30 | **R4 / ETHICS §10** | Robots-excluded endpoints **leave the kill switch's failure counter**, and are counted separately | The same rehearsal measured it rather than arguing it: 17 of 198 endpoints were excluded by `robots.txt`, which was 8.6 of the 15.2 percentage points the switch was reading. §10 defines its threshold over endpoints that were *"unreachable or blocked"*, and a robots exclusion is neither — we reached the host, read its rules, and chose not to ask. Identical in form to the opt-out fix of 29 July, on the branch that was missed then. With Okta and Auth0 both serving `Disallow: /` (ETHICS §6.1), a stratum heavy in hosted identity platforms could have aborted the census on a property of the ecosystem |
 | 2026-07-30 | **R4 / R5** | A transport failure on the endpoint fetch now scores **`ERROR`**, not `NOT_APPLICABLE` | Found in the pre-flight `dry-run`. With no response there is no 401, so every MUST stage took the composition branch and recorded *"authorization is OPTIONAL in MCP and this endpoint did not require it"* against a host we never reached. R5 makes `ERROR` the set the second run reconciles; `NOT_APPLICABLE` is not in it, so a transiently-failing endpoint would have been booked as one that does not use authorization and the confirmation run would never have been pointed at it. No rate moves — both outcomes leave every denominator — but the stored record now says what happened |
@@ -691,6 +692,51 @@ capped hostnames are precisely those where the extra listings carry no extra rea
 the first binding consequence has to be read with that in mind: an endpoint count is a count
 over the sample, the sampling fraction is recorded in `sampling.json` and derivable from
 `corpus.jsonl`, and a rate at the endpoint unit is reported with the exclusion beside it.
+
+---
+
+### R10.7 — Protected-resource metadata is looked for whether or not the endpoint challenged
+
+**New, 30 July 2026, written before the census and after the narrow-slice rehearsal.**
+
+The metadata locations in RFC 9728 §3.1 are requested for **every reachable endpoint**, not
+only for those answering 401 or 403. The verdicts do not change: an endpoint that neither
+challenged nor publishes metadata remains `NOT_APPLICABLE`, and **C05 can still only convict
+an endpoint that challenged**. What changes is what is observed before that conclusion is
+drawn.
+
+**The defect this repairs.** Until now `probe_oauth` returned before issuing any request
+unless the endpoint answered 401 or 403, so a challenge was the only entry into the OAuth
+funnel. The rehearsal measured what that discarded, over 164 reachable endpoints:
+
+| Answer to our GET | n | Publish protected-resource metadata |
+|---|---|---|
+| 401 / 403 — challenged | 50 | **37** (the control: this is the group the instrument already saw) |
+| 405 / 406 — method-gated | 59 | **11** |
+| 200 — served | 32 | **16** |
+
+`405 Method Not Allowed` is what a server returns when it routes on HTTP method before it
+consults authorization, so our GET never reached the layer under measurement. The
+undetermined group was **larger than the denominator**, and membership in it was decided by a
+framework's middleware order rather than by anything about authorization — a selection whose
+direction cannot be signed. **27 endpoints were declaring an authorization server, in a
+document at a well-known path, while the instrument recorded them as endpoints that do not
+use authorization and never looked.** Evidence: `docs/method-gate-probe.json`, produced by
+`scripts/measure_method_gate.py`.
+
+**Why this does not manufacture the result.** The tempting repair — define the denominator as
+"challenged **or** publishes metadata" — is circular for C05, whose numerator is *publishes
+metadata*; it would drive that rate up mechanically. It is refused. C05's denominator stays
+the endpoints that challenged. The population that grows is the one carrying **C12 and C13**,
+whose denominator is *documents we have read* rather than a posture we inferred, and which
+are therefore immune to this bias in a way C05 is not. In the rehearsal that population goes
+from 36 to roughly 64.
+
+**What it costs.** Two extra requests against endpoints that turn out to publish nothing, at
+paths already declared in `ETHICS.md` §3 and already requested against other endpoints. No
+POST, no protocol interaction, no authorization attempt — the passive claim is unaffected,
+which is the distinction that made this measurable at all where job #24's `initialize` harvest
+was not.
 
 ---
 

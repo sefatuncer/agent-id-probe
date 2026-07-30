@@ -38,7 +38,18 @@
       "comment": "httpx verifies chain and hostname, so a completed handshake is the evidence; no request is issued by this fixture at all"
     }
   },
-  "documents": [],
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource/mcp",
+      "status": 404,
+      "comment": "No protected-resource metadata is published here. Stated explicitly rather than left unmocked because from 30 July 2026 the instrument looks for this document whether or not the endpoint challenged (R10.7), so 'absent' is now an observation this fixture has to describe rather than a request it never provoked."
+    },
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource",
+      "status": 404,
+      "comment": "No protected-resource metadata is published here. Stated explicitly rather than left unmocked because from 30 July 2026 the instrument looks for this document whether or not the endpoint challenged (R10.7), so 'absent' is now an observation this fixture has to describe rather than a request it never provoked."
+    }
+  ],
   "expect": {
     "checks": {
       "C11": "pass",
