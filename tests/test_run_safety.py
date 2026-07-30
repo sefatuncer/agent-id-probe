@@ -534,3 +534,76 @@ async def test_an_issuer_on_a_nonstandard_port_is_actually_requested_and_scored(
     assert not ev.as_not_fetched, f"withheld {ev.as_not_fetched}"
     assert ev.as_issuer_relations == {issuer: "identical"}
     assert _outcome(checks, CheckId.AS_CORRESPONDENCE) is Outcome.PASS
+
+
+# --- the narrow-slice rehearsal must not be biased by corpus order -------------
+
+
+def _corpus_endpoint(url: str, apex: str | None):
+    return Endpoint(endpoint_id=endpoint_id(url), url=url, apex_domain=apex,
+                    kind=EndpointKind.MCP_REMOTE, source="t")
+
+
+def test_the_rehearsal_slice_spreads_across_apexes_instead_of_taking_the_first_n():
+    """ETHICS.md §11.3's rehearsal, and why `--limit` could not serve it.
+
+    `--limit N` takes the first N in corpus order, which is the registry's pagination order --
+    broadly newest-first. Recency correlates with operational maturity, maturity correlates
+    with sitting behind a WAF, and the block rate is the single number the rehearsal exists to
+    produce. So the cheapest way to take a slice would have biased the one measurement that
+    decides whether the full run proceeds.
+
+    A bulk publisher with hundreds of listings is the other half: a naive sample of 200 can be
+    a handful of operators, and the rehearsal is about how *hosts* respond to us.
+    """
+    from agentidprobe.runner import rehearsal_slice
+
+    endpoints = (
+        [_corpus_endpoint(f"https://bulk.example.com/mcp/{i}", "bulk.example.com")
+         for i in range(300)]
+        + [_corpus_endpoint(f"https://op{i}.example.org/mcp", f"op{i}.example.org")
+           for i in range(50)]
+    )
+    chosen = rehearsal_slice(endpoints, 40)
+
+    assert len(chosen) == 40
+    apexes = [e.apex_domain for e in chosen]
+    assert len(set(apexes)) == 40, "one endpoint per apex before a second from any"
+    assert apexes.count("bulk.example.com") == 1, (
+        "a bulk publisher must not be able to fill the rehearsal"
+    )
+
+
+def test_the_rehearsal_slice_is_deterministic_and_ignores_corpus_order():
+    """Reproducible without a stored seed, and unchanged by how the registry paginated.
+
+    Selection is by `endpoint_id`, already a SHA-256 prefix of the URL. `random.sample` would
+    have given neither property, and R8's determinism requirement needs both: the same corpus
+    must yield the same slice, so that a re-run is a re-run.
+    """
+    from agentidprobe.runner import rehearsal_slice
+
+    endpoints = [_corpus_endpoint(f"https://op{i}.example.org/mcp", f"op{i}.example.org")
+                 for i in range(80)]
+
+    first = [e.endpoint_id for e in rehearsal_slice(endpoints, 20)]
+    again = [e.endpoint_id for e in rehearsal_slice(endpoints, 20)]
+    reversed_corpus = [e.endpoint_id for e in rehearsal_slice(list(reversed(endpoints)), 20)]
+
+    assert first == again
+    assert first == reversed_corpus, "the slice must not depend on registry pagination order"
+
+
+def test_endpoints_with_no_resolvable_apex_each_count_as_their_own_operator():
+    """The conservative reading, and the one that keeps them observable.
+
+    A null apex means we cannot tell one operator from another. Grouping them together would
+    let a single unresolvable host crowd out every other one; giving each its own group keeps
+    the class represented, which matters because `dropped_no_apex` is a counter the frame
+    analysis reads.
+    """
+    from agentidprobe.runner import rehearsal_slice
+
+    endpoints = [_corpus_endpoint(f"https://10.0.0.{i}/mcp", None) for i in range(1, 11)]
+    chosen = rehearsal_slice(endpoints, 5)
+    assert len({e.endpoint_id for e in chosen}) == 5

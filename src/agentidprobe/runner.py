@@ -42,6 +42,56 @@ def origin_of(url: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, "", "", ""))
 
 
+def rehearsal_slice(endpoints: list, size: int) -> list:
+    """A deterministic, apex-spread subset for the narrow-slice rehearsal (ETHICS.md §11.3).
+
+    Written on 30 July 2026, immediately before the rehearsal, because `--limit N` was the
+    only way to take a subset and it takes the *first* N in corpus order. That order is the
+    registry's pagination order, which is broadly newest-first — and recency correlates with
+    operational maturity, which correlates with sitting behind a WAF, which is the block rate
+    the rehearsal exists to measure. A first-N slice would therefore have produced a
+    misleadingly low block rate and cleared the run on it. The one number the rehearsal must
+    get right is the one `--limit` would have biased.
+
+    Two properties, in order of importance:
+
+    **One endpoint per apex first.** Bulk publishers list hundreds of endpoints under a single
+    apex, so a naive sample of 200 can be a handful of operators. Since the rehearsal is
+    measuring how *hosts* respond to us, it takes one endpoint per apex before taking a second
+    from any, which also keeps the per-host request count at its minimum for a rehearsal --
+    fewer requests per operator, more operators, at no cost.
+
+    **Deterministic and independent of registry order.** Selection is by `endpoint_id`, which
+    is already a SHA-256 prefix of the URL: uniform, stable across runs, and unrelated to when
+    a server was registered. So the slice is reproducible without storing a seed, and the same
+    corpus yields the same slice on a re-run -- which R8's determinism requirement needs, and
+    which `random.sample` would not give.
+    """
+    if size <= 0 or size >= len(endpoints):
+        return list(endpoints)
+
+    by_apex: dict[str, list] = {}
+    for endpoint in endpoints:
+        # Endpoints with no resolvable apex form their own group each: they are the case where
+        # we cannot tell one operator from another, and folding them together would let a
+        # single unresolvable host crowd out the rest of them.
+        key = endpoint.apex_domain or f"?{endpoint.endpoint_id}"
+        by_apex.setdefault(key, []).append(endpoint)
+    for group in by_apex.values():
+        group.sort(key=lambda e: e.endpoint_id)
+
+    chosen: list = []
+    depth = 0
+    while len(chosen) < size:
+        layer = [group[depth] for group in by_apex.values() if len(group) > depth]
+        if not layer:
+            break
+        layer.sort(key=lambda e: e.endpoint_id)
+        chosen.extend(layer[: size - len(chosen)])
+        depth += 1
+    return chosen
+
+
 def derive_card_endpoints(endpoints: list[Endpoint]) -> list[Endpoint]:
     """One agent-card candidate per distinct origin in the OAuth corpus."""
     now = datetime.now(UTC)

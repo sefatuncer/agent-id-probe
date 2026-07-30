@@ -306,7 +306,7 @@ The realistic worst case is that a fragile endpoint is disturbed by our requests
    > *Committed:* commit `a1408d1` (29 July 2026) carries the rules and the amendment log,
    > so "frozen before collection" now has a timestamp behind it rather than an assertion.
    >
-   > *Fixtures:* `tests/fixtures/` exists — 30 self-describing JSON fixtures, each quoting
+   > *Fixtures:* `tests/fixtures/` exists — 41 self-describing JSON fixtures, each quoting
    > the specification sentence it derives from, driven over the real check functions by
    > `tests/test_conformance_pack.py`. Coverage is not asserted by hand: the set of checks
    > R8 leg 1 binds is recovered from the abstract syntax tree of `checks_oauth.py` and
@@ -317,16 +317,29 @@ The realistic worst case is that a fragile endpoint is disturbed by our requests
    > the eighth until 29 July 2026, when reading its anchor showed it could not convict
    > anybody; it left the set automatically, because the set is derived from the code.
    >
+   > *Controls (30 July 2026):* five of the 41 are **not** synthetic. Thirty-six use RFC 2606
+   > hosts, which means that until then the instrument had never been shown to **acquit** a
+   > real, correct deployment — and the defect that moved a headline from 75% to 25% was
+   > caught by hand-checking eight live endpoints, not by the fixture pack. Google, a Microsoft
+   > Entra tenant, Entra `/common`, GitHub Actions and GitLab are now captured verbatim by
+   > `scripts/capture_deployment_controls.py`, with every candidate URL recorded. Okta and
+   > Auth0 are absent for the reason given in §6.1, which is a finding rather than an omission.
+   >
    > Two caveats belong on the record rather than in a passing grade. **C11's violating
    > branches cannot occur in the field**: a refused handshake surfaces as a transport
    > error, which R4 makes an `ERROR`, and the collectors drop non-HTTPS URLs before
    > probing. Its fixtures are therefore synthetic and a "C11 violation rate" is
    > structurally zero — it must be reported as a property of the instrument, never as a
-   > property of the ecosystem. And the C03/C04/C15 fixtures pin **instrument behaviour**
-   > while carrying an explicit `verification` field recording that their anchors (A2A
-   > §8.4, RFC 7515 §5.2, RFC 7518 §3.6) are still unconfirmed against the source text,
-   > matching the ⚠️ rows in `docs/spec-mapping.md`. A fixture cannot certify an anchor
-   > nobody has checked.
+   > property of the ecosystem. And the C03/C04 fixtures pin **instrument behaviour** while
+   > carrying an explicit `verification` field recording that their anchors (A2A §8.4, and
+   > RFC 7515 §5.2 for the signature-failure clause) are still unconfirmed against the source
+   > text, matching the ⚠️ rows in `docs/spec-mapping.md`. A fixture cannot certify an anchor
+   > nobody has checked. C15 left this caveat on 30 July 2026: rather than demote it whole, its
+   > three conditions were read separately, and the one that survived — RFC 7518 §3.3's
+   > 2048-bit floor, *"A key of size 2048 bits or larger MUST be used with these algorithms"* —
+   > is verbatim-verified and carries the check alone. The two that did not (`none` and `HS*`,
+   > which RFC 7518 §3.6 and RFC 8725 do not reach in the way the check assumed) now score
+   > `UNSPECIFIED`.
 5. [ ] The ethics-board determination in §12 has been requested.
 6. [x] The opt-out list (`docs/opt-out.txt`) exists and is enforced in the fetcher.
 7. [x] The global abort threshold is set in code (`AbortPolicy`), not only in this document.

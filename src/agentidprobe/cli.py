@@ -34,7 +34,7 @@ from .config import DEFAULT_CONFIG, PROBE_VERSION
 from .fetcher import Fetcher
 from .models import Modality, RunContext
 from .replay import compare_reports
-from .runner import Runner, derive_card_endpoints, rescore, summarise
+from .runner import Runner, derive_card_endpoints, rehearsal_slice, rescore, summarise
 from .store import RunStore
 
 
@@ -120,6 +120,11 @@ async def _cmd_probe(args: argparse.Namespace) -> int:
 
     if args.limit:
         endpoints = endpoints[: args.limit]
+    if args.sample:
+        # Not `--limit`. See `rehearsal_slice`: corpus order is registry pagination order,
+        # which correlates with the very property the rehearsal measures.
+        endpoints = rehearsal_slice(endpoints, args.sample)
+        print(f"rehearsal slice: {len(endpoints)} endpoints, one per apex before two from any")
 
     runner = Runner(store, DEFAULT_CONFIG)
     print(f"probing {len(endpoints)} MCP endpoints "
@@ -333,7 +338,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     probe = sub.add_parser("probe", help="run the measurement over a collected corpus")
     probe.add_argument("--run-id", required=True)
-    probe.add_argument("--limit", type=int, default=0, help="probe only the first N endpoints")
+    probe.add_argument("--limit", type=int, default=0,
+                       help="probe only the first N endpoints, in corpus order")
+    probe.add_argument(
+        "--sample", type=int, default=0,
+        help="probe a deterministic, apex-spread slice of N endpoints (ETHICS.md 11.3). "
+             "Use this for the narrow-slice rehearsal, not --limit: corpus order is registry "
+             "order, which is broadly newest-first and so correlates with WAF presence -- the "
+             "block rate the rehearsal exists to measure")
     probe.add_argument("--skip-cards", action="store_true")
     probe.add_argument("--no-resume", action="store_true")
     probe.set_defaults(func=lambda a: asyncio.run(_cmd_probe(a)))
