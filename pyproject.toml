@@ -82,6 +82,15 @@ asyncio_mode = "auto"
 # The suite is fully mocked and must never touch the network. A per-test cap turns an
 # accidental live call into a fast failure instead of a stalled run.
 addopts = "--timeout=30 --timeout-method=thread"
+# `c15-violating-rsa-key-below-2048-bits` deliberately carries a 1024-bit RSA key, so
+# joserfc raises its own SecurityWarning when the key set is parsed. That warning is
+# correct and is exactly what the fixture demonstrates; it is silenced here and asserted
+# explicitly in `test_an_undersized_rsa_key_is_a_must_violation...` instead, because a
+# warning nobody acts on trains everyone to ignore the warning output.
+filterwarnings = [
+    "ignore:Key size should be >= 2048 bits:UserWarning",
+    "ignore:Key size should be >= 2048 bits",
+]
 
 [tool.ruff]
 line-length = 100

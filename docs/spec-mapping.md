@@ -37,8 +37,18 @@ The quotation-verification burden thereby falls to C01, which is already ✅.
 > — [A2A Agent Discovery](https://a2a-protocol.org/latest/topics/agent-discovery/)
 
 Not serving a card is not a violation → a C01 failure is `UNSPECIFIED`, not `FAIL_*`.
-`/.well-known/agent.json` is the pre-v0.3 alias; where it is found it is recorded with a
-version note.
+
+**⚠️ Corrected 30 July 2026.** This paragraph said `/.well-known/agent.json`, the pre-v0.3
+alias, *"is recorded with a version note where it is found"*. **It is never found, because it
+is never requested.** The path was removed from the scope statement on 29 July: nothing had
+ever fetched it, and `ETHICS.md` §3 is a promise to third parties about what we send, so a
+promise to fetch something we do not send had to go. The alternative — adding the request —
+would have cost one more round trip against every origin in the corpus to find legacy cards in
+a modality whose population is around ten endpoints, and fewer requests to third parties is
+the right side of that trade. The consequence is that **cards served only at the pre-v0.3 path
+are counted as absent**, which is in Limitations rather than here. Two frozen documents
+disagreeing about what the instrument does is the defect this project has hit most often, and
+`ETHICS.md` is the one that binds.
 
 **C02 — the obligation is on the verifier, not the publisher.**
 > *"Verifiers **SHOULD** verify at least one signature before trusting an Agent Card."*
@@ -154,6 +164,19 @@ it was directly the paper's headline number.
 > RFC 8414 §4, verbatim: *"Comparisons between the two strings **MUST** be performed as a
 > Unicode code-point-to-code-point equality comparison."* — Unicode normalisation is not
 > applied. This **forbids** forgiving a trailing slash (R9.4).
+>
+> RFC 9728 §6, verbatim: *"Unicode Normalization **MUST NOT** be applied at any point to
+> either the JSON string or the string it is to be compared against… Comparisons between the
+> two strings **MUST** be performed as a Unicode code-point-to-code-point equality
+> comparison."* — the identical three-step procedure, in the document governing **C12**.
+
+**⚠️ Both strictness anchors are cited, added 30 July 2026.** RFC 9728 §6 was missing here
+while R9.2b requires it, and the omission was one-sided in our favour: quoting RFC 8414 §4 to
+justify strictness in C13 while leaving C12's own equivalent clause uncited invites exactly the
+objection *"you chose the threshold where it suited you"*. The two documents impose the same
+comparison rule, so the strictness in **both** checks is the specifications' and not ours, and
+the asymmetry that remains — `trailing_slash_only` being `UNSPECIFIED` in C12 and a violation
+in C13 — comes from R9.4's measurability argument rather than from a difference in the text.
 
 **⚠️ The obligation in C13 falls on the authorization server, not the MCP server.** RFC 8414
 §3.3 binds Auth0, Okta, and Keycloak. C13's unit of analysis is therefore **the issuer, not the
@@ -265,7 +288,7 @@ itself the finding: in the agent identity ecosystem, revocation is a feature nob
 | ID | Check | Spec | Strength |
 |---|---|---|---|
 | **C11** | Is the endpoint's own TLS valid | RFC 9728 + BCP 195; MCP: *"All authorization server endpoints **MUST** be served over HTTPS"* | **MUST** |
-| **C15** | `alg` / key strength / `kid` resolution | RFC 7518, BCP 195 | **MUST** (`none`, `HS*` against a public JWKS, RSA < 2048) |
+| **C15** | `alg` / key strength / `kid` resolution | **RFC 7518 §3.3** (MUST-bearing half); RFC 7518 §3.6 and RFC 8725 recorded as the anchors that do **not** reach | **MUST** for **RSA < 2048 only**. `none` and `HS*` are recorded as `UNSPECIFIED` |
 
 ---
 

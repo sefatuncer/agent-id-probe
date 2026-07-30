@@ -1,0 +1,81 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c15-violating-rsa-key-below-2048-bits",
+  "modality": "signed_document",
+  "title": "A validly signed card whose RSA signing key is 1024 bits",
+  "exercises": {
+    "C15": "violating"
+  },
+  "decision_rules": [
+    "R1",
+    "R6",
+    "R8"
+  ],
+  "rationale": "The violating case R8 leg 1 requires for C15, and the reason C15 was not demoted wholesale on 30 July 2026. Two of its three conditions lost their MUST when the primary text was read -- `none` and symmetric algorithms are governed by sentences binding the verifier, or by RFC 8725, which is about JWTs -- but this one survives intact: RFC 7518 3.3 puts a 2048-bit floor on the signer, in the document the check already cited, and it is mechanically observable from the published key set. Blanket-demoting C15 would have discarded a correctly anchored measurement to tidy up two badly anchored ones. The signature here genuinely verifies, which is the point of constructing it that way: the defect is the key length and nothing else, so the fixture isolates C15 from C04 instead of relying on a broken signature to produce the failure.",
+  "key_provenance": "A real 1024-bit RSA key generated for this fixture; the private key was discarded after signing and appears nowhere. The protected header base64url-decodes to {\"alg\": \"RS256\", \"kid\": \"agent-example-rsa-1024\", \"jku\": \"https://agent.example.org/.well-known/jwks.json\"} and the signature is a genuine RS256 signature over `protected.JCS(card)`, so it would verify if the instrument attempted it. It does not attempt it: a 1024-bit RSA signature is not creditable as a cryptographic binding, and C04 therefore reports UNSPECIFIED rather than a verification failure that did not happen.",
+  "spec": [
+    {
+      "source": "RFC 7518",
+      "section": "3.3 (Digital Signature with RSASSA-PKCS1-v1_5)",
+      "url": "https://www.rfc-editor.org/rfc/rfc7518.html#section-3.3",
+      "quote": "A key of size 2048 bits or larger MUST be used with these algorithms.",
+      "verification": "verbatim-verified against rfc-editor.org, 30 July 2026"
+    },
+    {
+      "source": "A2A",
+      "section": "8.4",
+      "url": "https://a2a-protocol.org/latest/specification/",
+      "quote": "A signed card MUST be verifiable against a discoverable key.",
+      "verification": "as recorded in docs/spec-mapping.md; the publisher-binding half of the signed-document funnel"
+    }
+  ],
+  "endpoint": {
+    "url": "https://agent.example.org/.well-known/agent-card.json",
+    "response": {
+      "status": 200,
+      "json": {
+        "name": "Example Agent",
+        "description": "Synthetic A2A Agent Card used only by the R8 conformance pack.",
+        "version": "1.0.0",
+        "protocolVersion": "0.3.0",
+        "url": "https://agent.example.org/a2a",
+        "preferredTransport": "JSONRPC",
+        "signatures": [
+          {
+            "protected": "eyJhbGciOiJSUzI1NiIsImtpZCI6ImFnZW50LWV4YW1wbGUtcnNhLTEwMjQiLCJqa3UiOiJodHRwczovL2FnZW50LmV4YW1wbGUub3JnLy53ZWxsLWtub3duL2p3a3MuanNvbiJ9",
+            "signature": "IhymuYKn38K9FKVuAA5SSu_zHuKqWrVztm8Za1pbO-I17KtCK70rICb6tYnSl_G2xU_0O0IN5aPqVhf-Xoyipu7wq1CQrkW_SMMhcuoNsNHSfNIdP-sJoRDMjuvQ68BN3ty9twRGO63oegdHSexeiotdcVt9UIMBu88kDcwPCs8",
+            "header": {
+              "kid": "agent-example-rsa-1024"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "documents": [
+    {
+      "url": "https://agent.example.org/.well-known/jwks.json",
+      "status": 200,
+      "comment": "resolved from the `jku` member of the protected header; 1024-bit modulus",
+      "json": {
+        "keys": [
+          {
+            "kty": "RSA",
+            "kid": "agent-example-rsa-1024",
+            "alg": "RS256",
+            "use": "sig",
+            "n": "s5Jmc5P6eqleZLnSiQWkniVnJn1Wz44kTGqAVVlvtRaXuyw10BC-89rTytMnJQkaDh5WkYi5D6S41If1ps_bpPlx_FCVvd5fkA5OK-Ehvwen8pdbqQnHeE1oq9DOjYdUWmwvgk5M0aWarlCik6CtoQW4j51j83jnfOUiiPxxQIU",
+            "e": "AQAB"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C03": "pass",
+      "C04": "unspecified",
+      "C15": "fail_misimplemented"
+    }
+  }
+}

@@ -40,12 +40,29 @@ SPEC_RFC7515 = "https://www.rfc-editor.org/rfc/rfc7515.html"
 # one JWS Signature value MUST successfully validate, or the JWS MUST be considered invalid"
 # lives, and every stored C04 verdict carries the URL a reviewer will follow.
 SPEC_RFC7515_VALIDATION = "https://www.rfc-editor.org/rfc/rfc7515.html#section-5.2"
+# C15's two halves point at two different sections, and the split is the point: 3.3 carries a
+# MUST on the signer, 3.6 carries MUSTs on the verifier. Citing RFC 7515 (and BCP 195, a TLS
+# document) for both was how the difference stayed invisible.
+SPEC_RFC7518_RSA = "https://www.rfc-editor.org/rfc/rfc7518.html#section-3.3"
+SPEC_RFC7518_NONE = "https://www.rfc-editor.org/rfc/rfc7518.html#section-3.6"
 SPEC_RFC8785 = "https://www.rfc-editor.org/rfc/rfc8785.html"
 SPEC_DIDWEB = "https://w3c-ccg.github.io/did-method-web/"
 
 # RFC 7518 / BCP 195. `none` is unauthenticated by construction; a symmetric algorithm
 # alongside a public key set means anyone holding the published key can forge.
-_FORBIDDEN_ALGS = {"none", "HS256", "HS384", "HS512"}
+# Algorithms under which a "successful" verification is evidence of nothing: `none` is
+# unauthenticated by construction, and a symmetric MAC whose key the operator publishes can be
+# produced by anyone who fetched the JWKS. Verification is therefore never *attempted* under
+# them, which keeps C04 honest.
+#
+# Renamed from `_FORBIDDEN_ALGS` on 30 July 2026, because "forbidden" was the claim that did
+# not survive reading the primary text: RFC 7518 §3.6's prohibitions bind the verifier, not the
+# publisher, and the document that would bind the publisher (RFC 8725) is a BCP about JWTs
+# while an agent-card signature is a detached JWS over a JCS payload. Not creditable is not the
+# same as forbidden, and the name asserted the stronger one. See `_key_strength_problem`.
+_UNVERIFIABLE_ALGS = {"none", "HS256", "HS384", "HS512"}
+# RFC 7518 §3.3, verbatim: "A key of size 2048 bits or larger MUST be used with these
+# algorithms." This is the one C15 condition with a publisher-binding MUST behind it.
 _MIN_RSA_BITS = 2048
 
 # joserfc's default registry admits only HS256/RS256/ES256 and rejects anything else as
@@ -199,18 +216,51 @@ async def _resolve_keys(
     return None, None, "no jku or did:web reference in the signature header"
 
 
-def _key_strength_problem(header: dict, key_set: KeySet | None) -> str | None:
+def _key_strength_problem(header: dict, key_set: KeySet | None) -> tuple[str | None, str | None]:
+    """Return `(violation, observation)` — the two halves of C15, which are not the same thing.
+
+    Decision rule R9.7 / the C15 split of 30 July 2026. C15 rested on "RFC 7518 / BCP 195" for
+    three conditions, and reading the primary text showed the citation supported one of them:
+
+    **RSA below 2048 bits is a genuine, publisher-binding MUST.** RFC 7518 §3.3: *"A key of
+    size 2048 bits or larger MUST be used with these algorithms."* It binds whoever signs, it
+    is mechanically observable from the published JWKS, and a failure here is a real finding.
+    This is the `violation` half.
+
+    **`none` is not.** RFC 7518 §3.6's obligations bind the **verifier**: *"Implementations
+    that support unsecured JWSs MUST NOT accept them as valid unless the application
+    specifies that it is acceptable."* Nothing there forbids a *publisher* from emitting one.
+    Scoring the publisher for it is precisely the error C14 was demoted for and C16 was made
+    descriptive to avoid -- reading an obligation on the consuming party as a defect in the
+    party we can observe.
+
+    **`HS*` against a published JWKS is not either.** §3.2 sets a minimum HMAC key *size* and
+    says nothing about publishing the key. The document that would forbid this is RFC 8725,
+    and it does not reach: RFC 8725 is a BCP about **JWTs**, and an A2A agent-card signature is
+    a detached JWS over a JCS-canonicalised card -- no claims set, not a JWT. That distinction
+    is the whole answer to whether 8725 can be borrowed here, and it cannot.
+
+    **BCP 195 was simply the wrong document.** It is about TLS and has nothing to say about JWS
+    algorithm selection. It appeared in every C15 verdict's `spec_ref`.
+
+    So `none` and `HS*` are still detected, still recorded, and no longer convict anybody:
+    they come back as `observation` and C15 reports UNSPECIFIED. The security reasoning that
+    put them here is untouched and remains the reason verification is never *attempted* under
+    them -- a signature that "verifies" under `none` or under a key the operator publishes is
+    evidence of nothing, and counting it would inflate C04. Refusing to score it and refusing
+    to credit it are separate decisions, and only the second one needed a MUST.
+    """
     alg = header.get("alg")
-    if not isinstance(alg, str) or alg in _FORBIDDEN_ALGS:
-        return f"algorithm {alg!r}"
-    if key_set is None:
-        return None
-    for key in key_set.keys:
-        if key.key_type == "RSA":
-            n = key.dict_value.get("n")
-            if isinstance(n, str) and len(_b64url_decode(n)) * 8 < _MIN_RSA_BITS:
-                return f"RSA key shorter than {_MIN_RSA_BITS} bits"
-    return None
+    observation: str | None = None
+    if not isinstance(alg, str) or alg in _UNVERIFIABLE_ALGS:
+        observation = f"algorithm {alg!r} carries no verifiable binding"
+    if key_set is not None:
+        for key in key_set.keys:
+            if key.key_type == "RSA":
+                n = key.dict_value.get("n")
+                if isinstance(n, str) and len(_b64url_decode(n)) * 8 < _MIN_RSA_BITS:
+                    return f"RSA key shorter than {_MIN_RSA_BITS} bits", observation
+    return None, observation
 
 
 async def probe_signed(
@@ -296,7 +346,13 @@ async def probe_signed(
     resolved_any = False
     verified_any = False
     key_errors: list[str] = []
-    strength_problems: list[str] = []
+    strength_violations: list[str] = []
+    strength_observations: list[str] = []
+    # Signatures we declined to attempt, and signatures we attempted and that failed. C04's
+    # verdict depends on which of the two happened, and conflating them made it assert
+    # something false about the artefact.
+    skipped_not_creditable: list[str] = []
+    attempted_and_failed = 0
 
     for sig in ev.signatures:
         header = _decode_protected(sig)
@@ -315,14 +371,29 @@ async def probe_signed(
             continue
         resolved_any = True
 
-        problem = _key_strength_problem(header, key_set)
-        if problem:
+        violation, observation = _key_strength_problem(header, key_set)
+        if violation:
+            strength_violations.append(violation)
+        if observation:
+            strength_observations.append(observation)
+        if violation or observation:
             # A signature that "verifies" under `none`, under a symmetric algorithm whose
             # key the operator publishes, or under an undersized RSA key is not evidence
             # of anything: anyone holding the public material can produce it. Counting it
             # as a cryptographic binding would inflate the paper's headline number, so it
-            # is never attempted rather than attempted and passed.
-            strength_problems.append(problem)
+            # is never attempted rather than attempted and passed. That decision is about
+            # what C04 may credit and is unchanged by the C15 split -- declining to credit a
+            # signature and convicting its publisher are different acts, and only the second
+            # one needs a MUST.
+            #
+            # It is recorded, though, because C04 must not then report that the signature
+            # failed to verify. It did not fail; we declined to try. Until 30 July 2026 this
+            # branch fell through to `FAIL_MISIMPLEMENTED` with the detail "key resolved but
+            # no signature verified over the JCS payload" -- a MUST-level accusation whose
+            # own detail string was false, and demonstrably so for an undersized RSA key,
+            # where the signature verifies perfectly well and the defect is the key length.
+            # R6: what we chose not to observe is UNSPECIFIED.
+            skipped_not_creditable.append(violation or observation or "")
             continue
 
         compact = f"{sig.get('protected')}.{payload_b64}.{sig.get('signature', '')}"
@@ -331,6 +402,7 @@ async def probe_signed(
             verified_any = True
             ev.verified_count += 1
         except Exception:  # noqa: BLE001 - a bad signature is data, not a crash
+            attempted_and_failed += 1
             continue
 
     # C03
@@ -364,21 +436,54 @@ async def probe_signed(
     elif not resolved_any:
         add(CheckId.SIGNATURE_VERIFIES, Outcome.NOT_APPLICABLE, NormativeStrength.MUST,
             detail="no key could be resolved, so the signature cannot be judged")
+    elif not attempted_and_failed and skipped_not_creditable:
+        # Every signature on this card was skipped rather than tested, so there is no
+        # observation of a verification failure to report (R6).
+        add(CheckId.SIGNATURE_VERIFIES, Outcome.UNSPECIFIED, NormativeStrength.MUST,
+            spec_ref="RFC 7515 5.2; verification not attempted, so no failure was observed",
+            spec_url=SPEC_RFC7515_VALIDATION,
+            observed_value="; ".join(skipped_not_creditable),
+            detail="verification was not attempted: the signing material is not creditable "
+                   "as a cryptographic binding, which is our decision about what may count "
+                   "and not an observation about whether the signature is well formed")
     else:
         add(CheckId.SIGNATURE_VERIFIES, Outcome.FAIL_MISIMPLEMENTED, NormativeStrength.MUST,
-            spec_ref="RFC 7515 5.2: at least one JWS Signature value MUST successfully "
+            # A2A 8.4 is the publisher-binding half and belongs here rather than only on the
+            # PASS branch: RFC 7515 5.2's MUSTs tell a *verifier* to reject an invalid JWS,
+            # and the objection that demoted two thirds of C15 would apply to this branch
+            # too if the only citation were 5.2. A2A binds whoever published the card.
+            spec_ref="A2A 8.4: a signed card MUST be verifiable against a discoverable key; "
+                     "RFC 7515 5.2: at least one JWS Signature value MUST successfully "
                      "validate, or the JWS MUST be considered invalid",
             spec_url=SPEC_RFC7515_VALIDATION,
+            observed_value=f"{attempted_and_failed} of {len(ev.signatures)} signature(s) "
+                           f"tested and none verified",
             detail="key resolved but no signature verified over the JCS payload")
 
-    # C15
-    if strength_problems:
+    # C15. Two conditions, two verdicts, because only one of them has a MUST behind it that
+    # binds the party we can observe (R9.7; the reasoning is in `_key_strength_problem`).
+    if strength_violations:
         add(CheckId.KEY_STRENGTH, Outcome.FAIL_MISIMPLEMENTED, NormativeStrength.MUST,
-            spec_ref="RFC 7518 / BCP 195", spec_url=SPEC_RFC7515,
-            observed_value="; ".join(strength_problems))
+            spec_ref="RFC 7518 3.3: a key of size 2048 bits or larger MUST be used with "
+                     "these algorithms",
+            spec_url=SPEC_RFC7518_RSA,
+            observed_value="; ".join(strength_violations + strength_observations))
+    elif strength_observations:
+        # Recorded, never charged. RFC 7518 3.6 binds the verifier and RFC 8725 governs JWTs,
+        # so an agent card published with `none` or with a symmetric algorithm violates no
+        # sentence we can hold its publisher to -- and this is a striking descriptive finding
+        # in its own right, which is why it is reported rather than dropped.
+        add(CheckId.KEY_STRENGTH, Outcome.UNSPECIFIED, NormativeStrength.MUST,
+            spec_ref="RFC 7518 3.6 binds the verifier, not the publisher, and RFC 8725's "
+                     "prohibitions govern JWTs rather than a detached JWS; recorded without "
+                     "penalty (R1, R6, R9.7)",
+            spec_url=SPEC_RFC7518_NONE,
+            observed_value="; ".join(strength_observations))
     elif resolved_any:
         add(CheckId.KEY_STRENGTH, Outcome.PASS, NormativeStrength.MUST,
-            spec_ref="RFC 7518 / BCP 195", spec_url=SPEC_RFC7515,
+            spec_ref="RFC 7518 3.3: a key of size 2048 bits or larger MUST be used with "
+                     "these algorithms",
+            spec_url=SPEC_RFC7518_RSA,
             observed_value=",".join(ev.algs))
     else:
         add(CheckId.KEY_STRENGTH, Outcome.NOT_APPLICABLE, NormativeStrength.MUST,

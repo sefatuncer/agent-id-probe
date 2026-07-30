@@ -1,0 +1,87 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c15-undecidable-unsecured-alg-none",
+  "modality": "signed_document",
+  "title": "Signature declares `alg: none` against a published public key set",
+  "exercises": {
+    "C15": "undecidable"
+  },
+  "decision_rules": [
+    "R1",
+    "R6",
+    "R9"
+  ],
+  "rationale": "Relabelled from `violating` to `undecidable` on 30 July 2026, after the primary text was read. Verification is never attempted here rather than attempted and passed: a signature made under `none`, or under a symmetric algorithm whose key the operator publishes, is evidence of nothing, because anyone holding the published material can produce it, and crediting it would inflate the paper's cryptographic-binding number with endpoints that have no binding at all. But declining to credit a signature and convicting its publisher are separate acts, and only the second needs a MUST that binds the publisher. There is none: RFC 7518 3.6's obligations are addressed to the verifier, and RFC 8725 -- which does prohibit this -- is a BCP about JWTs, while an A2A agent-card signature is a detached JWS over a JCS-canonicalised card with no claims set. BCP 195, cited alongside RFC 7518 in every C15 verdict until this date, is a TLS document and was simply the wrong reference. C15 keeps its MUST for the one condition that has one -- RSA below 2048 bits, RFC 7518 3.3 -- which `c15-violating-rsa-key-below-2048-bits` now covers. C04 becomes UNSPECIFIED here for the same reason: reporting that the signature failed to verify would be a false statement about a signature nobody tested.",
+  "key_provenance": "Nothing here is signed, which is the point: the protected header base64url-decodes to {\"alg\": \"none\", \"kid\": \"agent-example-key-1\", \"jku\": \"https://agent.example.org/.well-known/jwks.json\"} and the signature is deliberately the empty octet sequence. The key set served below is the same published P-256 public key as in `c03-c04-c15-conforming-signed-card-verifies`, so the key resolves and only the algorithm differs between the two fixtures.",
+  "spec": [
+    {
+      "source": "RFC 7518",
+      "section": "3.6 (Using the Algorithm \"none\")",
+      "url": "https://www.rfc-editor.org/rfc/rfc7518.html#section-3.6",
+      "quote": "Implementations that support Unsecured JWSs MUST NOT accept such objects as valid unless the application specifies that it is acceptable for a specific object to not be integrity protected.",
+      "verification": "verbatim-verified against rfc-editor.org, 30 July 2026. Read closely, this is the sentence that DEMOTED C15's `none` condition rather than anchoring it: every MUST in 3.6 binds an implementation *accepting* a JWS, not one publishing it. Nothing in RFC 7518 forbids a publisher from emitting `alg: none`."
+    },
+    {
+      "source": "RFC 8725 (BCP 225)",
+      "section": "1 (Introduction)",
+      "url": "https://www.rfc-editor.org/rfc/rfc8725.html#section-1",
+      "quote": "The goal of this document is to facilitate secure implementation and deployment of JWTs.",
+      "verification": "verbatim-verified 30 July 2026. Recorded because it is the document that WOULD have anchored a MUST here and does not reach: its subject is JWTs, and an agent-card signature is a detached JWS over a JCS payload. This closes the question left open in the earlier version of this fixture."
+    },
+    {
+      "source": "RFC 7518",
+      "section": "3.3 (Digital Signature with RSASSA-PKCS1-v1_5)",
+      "url": "https://www.rfc-editor.org/rfc/rfc7518.html#section-3.3",
+      "quote": "A key of size 2048 bits or larger MUST be used with these algorithms.",
+      "verification": "verbatim-verified against rfc-editor.org, 30 July 2026. Included here to record what C15 retained: this is the only condition of the three with a MUST binding the party the instrument observes."
+    }
+  ],
+  "endpoint": {
+    "url": "https://agent.example.org/.well-known/agent-card.json",
+    "response": {
+      "status": 200,
+      "json": {
+        "name": "Example Agent",
+        "description": "Synthetic A2A Agent Card used only by the R8 conformance pack.",
+        "version": "1.0.0",
+        "protocolVersion": "0.3.0",
+        "url": "https://agent.example.org/a2a",
+        "preferredTransport": "JSONRPC",
+        "signatures": [
+          {
+            "protected": "eyJhbGciOiAibm9uZSIsICJraWQiOiAiYWdlbnQtZXhhbXBsZS1rZXktMSIsICJqa3UiOiAiaHR0cHM6Ly9hZ2VudC5leGFtcGxlLm9yZy8ud2VsbC1rbm93bi9qd2tzLmpzb24ifQ",
+            "signature": "",
+            "header": {
+              "kid": "agent-example-key-1"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "documents": [
+    {
+      "url": "https://agent.example.org/.well-known/jwks.json",
+      "status": 200,
+      "comment": "resolved from the `jku` member of the protected header",
+      "json": {
+        "keys": [
+          {
+            "crv": "P-256",
+            "kid": "agent-example-key-1",
+            "kty": "EC",
+            "x": "joXMmL4ZbDlGPgXdBZhgKTsMwk2mQwADqmjXkhMRXK4",
+            "y": "2xMThEgqvX3QTv8b07VR-7gSxpXDRojAm1v12ndD6g0"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C03": "pass",
+      "C04": "unspecified",
+      "C15": "unspecified"
+    }
+  }
+}

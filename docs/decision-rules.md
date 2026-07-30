@@ -66,6 +66,8 @@ only one a reader can check.*
 | 2026-07-29 | **Funnel** | **`FUNNEL_OAUTH` now ends at C13**; it has four stages | A descriptive check cannot be a funnel stage that narrows on `PASS`: `runner.summarise()` would keep a non-advertising endpoint in the denominator and never in the numerator, which is the composition-as-failure error that produced the 36.7% vs 96.6% gap. The funnel now terminates where the paper's thesis does, at issuer correspondence |
 | 2026-07-29 | **C14 aggregation** | "any declared issuer advertised it" → **all declared issuers**, matching C16–C18 | C14 was the only funnel-stage check with an undeclared aggregation rule, and it used the most permissive one available. C13 four hundred lines away rejects exactly that reasoning: *"a resource that names five issuers of which four are dead is the thesis in miniature."* R11.5 fixed this for C16–C18 and had no C14 row |
 | 2026-07-29 | **C16 bound party** | Recorded as binding the **client**; corrected to the **authorization server** | RFC 9207 §3 — *"the authorization server MUST indicate its support for the `iss` parameter"* — is the sentence governing what C16 observes; RFC 9700 §2.1's REQUIRED binds the client and is the motivation, not the anchor. The paper's §2 already said this. C16 stays descriptive: RFC 9207 §3's MUST is conditional on supporting the parameter, so an absent flag means "does not support", which nothing forbids. Found by the Figure 1 ↔ Table 1 cross-check, not by reading |
+| 2026-07-30 | **R9.7 / C15** | **C15 was split, not demoted.** `none` and `HS*` lose their MUST and are recorded as `UNSPECIFIED`; **RSA < 2048 keeps it**, re-anchored to RFC 7518 §3.3. BCP 195 removed from the anchor entirely | The roadmap called for demoting C15 outright on the ground that its anchor was too weak for MUST. Reading the primary text showed that was true of two conditions out of three. **`none`:** every MUST in RFC 7518 §3.6 binds an implementation *accepting* an unsecured JWS — *"Implementations that support Unsecured JWSs **MUST NOT** accept such objects as valid unless…"* — and nothing forbids publishing one. **`HS*` against a published JWKS:** §3.2 sets a minimum key *size* and says nothing about publishing the key; the document that would forbid it is **RFC 8725**, and it does not reach, because RFC 8725 is a BCP about **JWTs** while an A2A card signature is a detached JWS over a JCS payload with no claims set — which settles the question left open for referee #3. **BCP 195 is a TLS document** and had no business in a JWS algorithm anchor, yet appeared in every C15 verdict. **RSA < 2048 survives intact:** RFC 7518 §3.3, *"A key of size 2048 bits or larger **MUST** be used with these algorithms"*, binds the signer and is observable from the published key set. Demoting wholesale would have discarded a correctly anchored measurement to tidy up two badly anchored ones. Security behaviour is unchanged: verification is still never *attempted* under non-creditable material, since declining to credit a signature and convicting its publisher are separate acts and only the second needs a MUST |
+| 2026-07-30 | **C04** | A card whose signatures were all **skipped** as non-creditable now scores `UNSPECIFIED`, not `FAIL_MISIMPLEMENTED`; the failing branch gained **A2A §8.4** as its publisher-binding anchor | Exposed by the C15 split. The old branch emitted a MUST-level failure with the detail *"key resolved but no signature verified over the JCS payload"* — **a false statement**, and demonstrably so for an undersized RSA key, where the signature verifies perfectly and the defect is the key length. We had not observed a verification failure; we had declined to look, which R6 assigns to `UNSPECIFIED`. Separately, the failing branch cited only RFC 7515 §5.2, whose MUSTs tell a *verifier* to reject an invalid JWS — the same objection that demoted two thirds of C15 would have applied to C04's headline failure |
 | 2026-07-30 | **R10.5** | **New** — what the intervals are uncertainty *about*, given a census frame; and a rate offered as a **description of the snapshot is published as a count with no interval** | The corpus is a complete enumeration, so sampling error is zero and an unexplained interval reads as sampling error — the easiest attack surface in the paper. The three real sources are named (the enumerated unit is not the unit of variation; the frame moves; one read is noisy), and the constraint that descriptive counts carry no interval is new and binding |
 | 2026-07-30 | **R10.4** | The **variance floor was written into the rule's body**; the coverage range was made consistent at 45%–82% | The floor was announced in this log on 29 July and implemented in `analysis.py` the same day, but the rule's text never stated it — the code was ahead of the pre-registration, which is exactly what makes a pre-registration unverifiable. The coverage figure appeared as both 45% and 46% in different places |
 | 2026-07-30 | **R10.3** | Rewritten: of the three "observed signals" it named, **the PRM hash had been withdrawn by R10.2 and ASN is not collected** | The rule pointed at three cluster signals of which one was live. The PRM-hash clustering was deleted on 28 July and this rule kept citing it; ASN is uncollected, which R10.2's own closing sentence forbids from feeding any decision. The operative cluster variables are apex (R10.2) and the value-free fingerprint (R10.2b) |
@@ -411,6 +413,43 @@ violation a class the instrument cannot distinguish.
 Classes such as `case_path_only` and `port_only` do not enter the sensitivity pair: they are
 real differences remaining after canonicalisation, not ambiguity.
 
+### R9.7 — "Not creditable" and "forbidden" are different findings, and only one convicts
+
+**Added 30 July 2026.** C15 rested on *"RFC 7518 / BCP 195"* for three conditions and the
+citation supported one. The rule generalises past C15, because the same confusion is available
+anywhere the instrument declines to credit something:
+
+| Condition | Anchor | Binds | Verdict |
+|---|---|---|---|
+| RSA key < 2048 bits | RFC 7518 **§3.3**: *"A key of size 2048 bits or larger **MUST** be used with these algorithms."* | the **signer** | `FAIL_MISIMPLEMENTED` |
+| `alg: none` | RFC 7518 §3.6's MUSTs bind an implementation *accepting* an unsecured JWS | the **verifier** | `UNSPECIFIED` |
+| `HS*` against a published JWKS | §3.2 sets a key *size*, not a publication rule; RFC 8725 would forbid it but governs **JWTs** | nobody we observe | `UNSPECIFIED` |
+
+Three things this settles:
+
+**BCP 195 was the wrong document.** It is about TLS. It appeared in the `spec_ref` of every C15
+verdict, pass or fail, and nothing in the suite ever read that string.
+
+**RFC 8725 cannot be borrowed.** It is a BCP about JSON Web *Tokens*; an A2A agent-card
+signature is a detached JWS over a JCS-canonicalised card with no claims set. This is the
+question that was outstanding with referee #3, and the answer is that the detached-JWS
+distinction does break the borrowing.
+
+**Declining to credit is not convicting.** Verification is still never *attempted* under `none`
+or a published symmetric key — a signature anyone can forge is not evidence of a binding, and
+crediting it would inflate C04. That decision is about what may count as evidence *for* us. It
+required no MUST. Writing a MUST-level failure against the publisher is a different act, and it
+did.
+
+The immediate consequence was a false statement, which is why the rule is worth stating rather
+than just fixing: with `none` and `HS*` no longer failing C15, the skipped-verification path
+reached C04's failing branch, which reports *"key resolved but no signature verified over the
+JCS payload"*. For an undersized RSA key that sentence is simply untrue — the signature
+verifies, and the defect is the key length. Nothing had observed a verification failure; we had
+declined to look. R6 sends that to `UNSPECIFIED`, and C04's remaining failing branch now cites
+**A2A §8.4** (*a signed card MUST be verifiable against a discoverable key*) alongside RFC 7515
+§5.2, because §5.2 on its own binds the verifier and would have fallen to this same objection.
+
 ### R9.6 — A templated identifier is its own class, and it is `UNSPECIFIED` in both checks
 
 **Added 30 July 2026, from a live document rather than from reasoning.** The first real
@@ -684,6 +723,12 @@ Symmetrically: C16 cannot be the headline if it comes out near 0% either — but
 the finding is a one-sentence yet strong result, *"the defence BCP 240 counts as REQUIRED is
 available nowhere in the ecosystem"*, and it is told together with the rank-3 topology.
 
+### R11.4 — The title is fixed after the measurement
+
+The paper's title may not contain a measurement result (such as *"Cannot Verify"* or
+*"Nobody Implements"*) before the headline is determined. Title candidates are kept in the
+plan and chosen after the measurement. This follows from R11.2.
+
 ### R11.5 — Unit, denominator and aggregation rule for every candidate ⚙️
 
 R11.1 ranks the candidates but did not say **in which unit and against which denominator**
@@ -710,14 +755,10 @@ the headline has been chosen **now**, in the table above.
 
 **Cross-operator proxy: apex only.** ASN and the TLS certificate were declared as sensitivity
 arms; ASN is not collected at all, and the certificate is collected but not compared. Under
-R10.2 an arm that cannot be collected can be the input to no result — and therefore **it is
-not promised either.**
-
-### R11.4 — The title is fixed after the measurement
-
-The paper's title may not contain a measurement result (such as *"Cannot Verify"* or
-*"Nobody Implements"*) before the headline is determined. Title candidates are kept in the
-plan and chosen after the measurement. This follows from R11.2.
+**R10.2b** — *"an arm that cannot be collected cannot carry a criterion"* — neither can be the
+input to any result, and therefore **neither is promised either.** *(Cited as R10.2 until
+30 July 2026. The sentence is in R10.2b; R10.2 is the apex-domain rule and says nothing about
+uncollected arms, so a reader checking the reference found the wrong rule.)*
 
 ---
 

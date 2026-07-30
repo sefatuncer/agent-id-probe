@@ -155,7 +155,13 @@ SPEC_ANCHOR_SUMMARY: dict[CheckId, tuple[str, BoundParty]] = {
     CheckId.PRM_RESOURCE_IDENTITY_MATCH: ("RFC 9728 §3.3", BoundParty.RESOURCE_SERVER),
     CheckId.AS_CORRESPONDENCE: ("RFC 8414 §3.3", BoundParty.AUTHORIZATION_SERVER),
     CheckId.PKCE_DECLARED: ("RFC 9700 §2.1.1; RFC 8414 §2", BoundParty.AUTHORIZATION_SERVER),
-    CheckId.KEY_STRENGTH: ("RFC 7518", BoundParty.CARD_PUBLISHER),
+    # RFC 7518 §3.3 only. C15 was split on 30 July 2026 (R9.7): §3.3's "a key of size 2048
+    # bits or larger MUST be used" binds the signer and is the one condition of the three
+    # that can convict. `none` and `HS*` are recorded as UNSPECIFIED, because §3.6 binds the
+    # verifier and RFC 8725 governs JWTs rather than a detached JWS. The label said bare
+    # "RFC 7518", which named the right document for the wrong reason -- it covered all three
+    # conditions equally, and two of them had nothing in that document behind them.
+    CheckId.KEY_STRENGTH: ("RFC 7518 §3.3", BoundParty.CARD_PUBLISHER),
     # RFC 9207 §2.3 binds the authorization server -- "The server MUST indicate its support
     # for the iss parameter by setting the metadata parameter
     # authorization_response_iss_parameter_supported ... to true" -- and that is the sentence
