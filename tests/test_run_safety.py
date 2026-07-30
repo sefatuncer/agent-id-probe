@@ -472,3 +472,65 @@ async def test_the_per_host_ceiling_does_not_truncate_the_corpus():
     assert pages["n"] == total, f"pagination stopped after {pages['n']} of {total} pages"
     assert len(endpoints) == total
     assert not registry.stats.errors, registry.stats.errors
+
+
+# --- D7: the accepting direction, which nothing pinned -------------------------
+
+
+LEGITIMATE_ISSUERS = (
+    ("https://as.example.org", "the ordinary case"),
+    ("https://as.example.org:8443", "a non-default port is not a defect"),
+    ("https://as.example.org/tenant/1", "RFC 8414 issuers may carry a path"),
+    ("https://login.eu.as.example.org", "arbitrarily deep sub-domains"),
+    ("https://xn--bcher-kva.example.org", "an IDN in punycode form"),
+    ("https://as.example.org/", "a terminating slash"),
+    ("https://AS.Example.ORG", "mixed case in the host (RFC 3986 6.2.2.1)"),
+    ("https://as.example.co.uk", "a multi-label public suffix"),
+    ("https://as.example.org/a?b=c", "a query component"),
+)
+
+
+@pytest.mark.parametrize("issuer,why", LEGITIMATE_ISSUERS, ids=[i for i, _ in LEGITIMATE_ISSUERS])
+def test_a_legitimate_issuer_is_not_withheld(issuer: str, why: str) -> None:
+    """Defect D7, reported by an adversarial review on 30 July 2026.
+
+    The issuer filter had tests for everything it must refuse -- loopback, RFC 1918,
+    special-use names, plain http -- and nothing for what it must *accept*. An
+    implementation that also rejected a port-carrying or IDN issuer would have passed the
+    entire suite, and a forgiving-in-one-direction rule needs both directions pinned or the
+    test only proves it is strict.
+
+    This got sharper the same day D8 was fixed. A withheld issuer now *leaves* the
+    denominator instead of counting as "does not advertise", which is correct -- and it means
+    over-rejection no longer shows up as a bad rate. It shows up as a smaller population, and
+    a smaller population is exactly what a study of an under-deployed mechanism expects to
+    see. The two changes compound: without this test, an over-strict filter would be
+    invisible in the output and would look like a finding.
+    """
+    from agentidprobe.checks_oauth import _issuer_rejection_reason
+
+    assert _issuer_rejection_reason(issuer) is None, (
+        f"withheld a legitimate issuer ({why}): {_issuer_rejection_reason(issuer)}"
+    )
+
+
+@respx.mock
+async def test_an_issuer_on_a_nonstandard_port_is_actually_requested_and_scored() -> None:
+    """The filter accepting it is necessary but not sufficient: the request has to happen.
+
+    Asserted end to end rather than on the predicate, because the predicate is one of three
+    gates the issuer passes through -- scheme check, per-endpoint cap, per-host ceiling -- and
+    a shape can be admitted by the first and dropped by the arithmetic in the others.
+    """
+    issuer = "https://as.example.org:8443"
+    _prm_mock([issuer])
+    respx.get(f"{issuer}/.well-known/oauth-authorization-server").mock(
+        return_value=httpx.Response(200, json={"issuer": issuer})
+    )
+
+    async with Fetcher(FAST) as f:
+        checks, ev = await probe_oauth(f, "https://api.example.org/mcp", _initial())
+
+    assert not ev.as_not_fetched, f"withheld {ev.as_not_fetched}"
+    assert ev.as_issuer_relations == {issuer: "identical"}
+    assert _outcome(checks, CheckId.AS_CORRESPONDENCE) is Outcome.PASS

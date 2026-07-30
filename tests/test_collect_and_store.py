@@ -502,3 +502,52 @@ async def test_collect_exits_non_zero_when_the_corpus_was_truncated():
             .read_text(encoding="utf-8")
         )
         assert any("TRUNCATED" in e for e in manifest["sources"][0]["errors"])
+
+
+# --- D10: the public suffix list is a recorded dependency, not an assumed one ---
+
+
+def test_public_suffix_provenance_identifies_the_snapshot_in_use():
+    """Defect D10, closed 30 July 2026.
+
+    The list was already pinned against the network -- `suffix_list_urls=()` means no run can
+    pick up a fresher one mid-measurement -- but not against the *dependency*:
+    `tldextract>=5.1,<6.0` admits any patch release and each ships its own snapshot. That
+    matters twice over. R10.2 makes the apex domain the primary unit of analysis, so the
+    snapshot decides the cluster count and every interval computed from it; and an issuer with
+    no registrable domain is never contacted, so it decides which requests the run sends and,
+    since the D8 fix, which issuers are in the denominator.
+    """
+    from agentidprobe.collectors import public_suffix_provenance
+
+    provenance = public_suffix_provenance()
+    assert provenance["library"] == "tldextract"
+    assert provenance["version"] not in ("", "unknown")
+    assert provenance["snapshot_sha256"] and len(provenance["snapshot_sha256"]) == 64
+    # The private section stays closed. Asserted rather than commented because the paper
+    # states the resulting bias -- platform tenants share an apex, so the cross-operator
+    # delegation rate is under-estimated -- and a silent flip would make that sentence false
+    # in the safe-sounding direction.
+    assert provenance["include_psl_private_domains"] is False
+    assert provenance["suffix_list_urls"] == []
+
+
+def test_every_manifest_records_the_public_suffix_list():
+    """Written on all manifests, not only `collect`'s.
+
+    `rescore` does not re-fetch but it does re-derive apexes, so R8 leg 2's promise of
+    byte-identical verdicts on replay was inheriting this dependency unrecorded. A reviewer
+    comparing their replay against ours can now see a snapshot mismatch instead of finding
+    the clustering quietly different.
+    """
+    from agentidprobe.models import RunContext
+
+    with tempfile.TemporaryDirectory() as tmp:
+        store = RunStore(pathlib.Path(tmp), "psl")
+        store.write_manifest(
+            RunContext(run_id="psl", vantage_point="test", started_at=datetime.now(UTC))
+        )
+        manifest = json.loads(store.manifest_path.read_text(encoding="utf-8"))
+
+    assert manifest["public_suffix_list"]["snapshot_sha256"]
+    assert manifest["public_suffix_list"]["version"] not in ("", "unknown")

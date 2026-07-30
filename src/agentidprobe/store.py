@@ -69,9 +69,19 @@ class RunStore:
     # -- writing ---------------------------------------------------------------
 
     def write_manifest(self, context: RunContext, extra: dict | None = None) -> None:
+        # The public-suffix list belongs in provenance, not in a dependency file (defect D10).
+        # R10.2 makes the apex domain the primary unit of analysis, so the snapshot in use
+        # decides the cluster count and therefore every published interval; and because an
+        # issuer with no registrable domain is never contacted, it also decides which requests
+        # the run sent. `tldextract>=5.1,<6.0` admits any patch release and each ships its own
+        # snapshot, so "reproducible" was resting on a dependency nobody recorded. Written on
+        # every manifest rather than only on `collect`, since `rescore` re-derives apexes too.
+        from .collectors import public_suffix_provenance
+
         payload = {
             "run_context": json.loads(context.model_dump_json()),
             "probe_version": PROBE_VERSION,
+            "public_suffix_list": public_suffix_provenance(),
             "written_at": datetime.now(UTC).isoformat(),
             **(extra or {}),
         }

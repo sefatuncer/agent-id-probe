@@ -63,6 +63,7 @@ reproducible, because `probe_version` alone does not say where the requests came
 | `run_context.probe_git_commit` | string \| null | `git rev-parse HEAD` of the probe at run time, or null if git was unavailable |
 | `run_context.started_at` | string (ISO 8601) | When the run began |
 | `probe_version` | string | `PROBE_VERSION` of the writing code (`0.1.0`) |
+| `public_suffix_list` | object | Which public-suffix list resolved every apex domain: `library`, `version`, `snapshot_sha256`, `include_psl_private_domains` (always `false`), `suffix_list_urls` (always `[]`, i.e. no network fetch). **Read this before comparing two runs' cluster counts.** The apex is the primary unit of analysis, so a different snapshot changes `m`, the design effect and every interval; and because an issuer with no registrable domain is never contacted, it also changes which requests were sent. Added 30 July 2026 — manifests written before then do not have it |
 | `written_at` | string (ISO 8601, UTC) | When the manifest itself was written |
 | `stage` | string | `collect`, `rescore`, or `probe` (the example generator only) |
 

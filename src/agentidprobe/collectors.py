@@ -13,10 +13,12 @@ later in the analysis.
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import json
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import tldextract
@@ -53,6 +55,53 @@ _KNOWN_PLATFORM_SUFFIXES = (
     "ngrok.io",
     "ngrok-free.app",
 )
+
+
+def public_suffix_provenance() -> dict:
+    """Which public-suffix list this run used, identified well enough to reproduce.
+
+    Defect D10, closed 30 July 2026. The list is already pinned *against the network* --
+    `suffix_list_urls=()` with `fallback_to_snapshot=True` means the bundled snapshot is the
+    only source and no run can silently pick up a fresher one mid-measurement. What was not
+    pinned is *which* snapshot: `tldextract>=5.1,<6.0` admits any patch release, and each
+    ships its own.
+
+    That is not a cosmetic gap, because the list decides two things that reach the paper:
+
+    * **The primary unit of analysis.** R10.2 makes the apex domain the unit, so a snapshot
+      that resolves one host differently changes the cluster count, and with it every
+      confidence interval and the design effect beside it.
+    * **Which hosts are contacted at all.** `_issuer_rejection_reason` withholds any issuer
+      with no registrable domain, so a suffix present in one snapshot and absent from another
+      changes the set of requests the instrument sends -- and since 30 July 2026 a withheld
+      issuer leaves the denominator, so it changes the population too.
+
+    R8 leg 2 promises that re-scoring stored artefacts reproduces every verdict bit for bit.
+    Replay does not re-fetch, but it does re-derive apexes, so that promise was inheriting an
+    unrecorded dependency. Recording the version and the snapshot digest in every manifest
+    turns "our numbers are reproducible" into something a reviewer can check rather than
+    accept: a mismatch is now visible instead of silently shifting the clustering.
+    """
+    try:
+        version = importlib.metadata.version("tldextract")
+    except importlib.metadata.PackageNotFoundError:  # pragma: no cover - not installed
+        version = "unknown"
+
+    digest = None
+    snapshot = Path(tldextract.__file__).parent / ".tld_set_snapshot"
+    if snapshot.exists():
+        digest = hashlib.sha256(snapshot.read_bytes()).hexdigest()
+    return {
+        "library": "tldextract",
+        "version": version,
+        "snapshot_sha256": digest,
+        # Stated rather than implied: the private section is off, so two tenants of one
+        # hosting platform share an apex. That is correct for clustering and it
+        # under-estimates the cross-operator delegation rate, which is the safe direction and
+        # is written into the paper's §3.5 and §9.4.
+        "include_psl_private_domains": False,
+        "suffix_list_urls": [],
+    }
 
 
 def apex_domain(url: str) -> str | None:

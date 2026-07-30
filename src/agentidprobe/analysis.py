@@ -611,19 +611,37 @@ def issuer_documents(reports: list, denominator: str) -> dict[str, dict | None]:
 
     `denominator` is R11.5's choice and it is not cosmetic:
 
-    * ``"declared"`` -- every issuer any resource named. An issuer that never answered maps
-      to None and counts against the rate, because a client cannot use a defence it cannot
-      reach. This is the denominator for C16 and C17.
+    * ``"declared"`` -- every issuer any resource named **and that we requested**. An issuer
+      that was asked and never answered maps to None and counts against the rate, because a
+      client cannot use a defence it cannot reach. This is the denominator for C16 and C17.
     * ``"observed"`` -- only issuers whose document was retrieved. This is the denominator
       for C18, where the question is what a reachable issuer chose to publish.
 
     Both are computed for every candidate as the pre-declared sensitivity pair (R9.5), so
     the choice above decides which one is the headline, not which one exists.
+
+    **Issuers in `as_not_fetched` leave both denominators (defect D8, fixed 30 July 2026).**
+    That field records issuers we declined to request -- not a public HTTPS host, or past the
+    ten-per-endpoint request cap -- and this function did not read it, so an issuer we never
+    contacted arrived here as `None` and was scored as "does not advertise". The rate that
+    absorbed it is C16, which R11.1 ranks as the *first* headline candidate: our own scope
+    policy was pushing the paper's leading number downward, and the harder we throttled the
+    worse the ecosystem would have looked. The identical defect was found and fixed inside
+    `checks_oauth.py` on 29 July for the per-endpoint verdict; the analysis layer, which
+    computes the number that actually gets published, was not fixed with it. We cannot report
+    on what we declined to ask.
     """
     if denominator not in ("declared", "observed"):
         raise ValueError(f"unknown denominator: {denominator}")
 
     documents: dict[str, dict | None] = {}
+    withheld: set[str] = set()
+    for report in reports:
+        evidence = report.evidence or {}
+        for issuer in (evidence.get("as_not_fetched") or {}):
+            if isinstance(issuer, str):
+                withheld.add(issuer)
+
     for report in reports:
         evidence = report.evidence or {}
         as_documents = evidence.get("as_documents") or {}
@@ -631,6 +649,12 @@ def issuer_documents(reports: list, denominator: str) -> dict[str, dict | None]:
             if not isinstance(issuer, str):
                 continue
             doc = as_documents.get(issuer)
+            # Withheld by our own policy for *every* endpoint that named it. An issuer one
+            # resource declared past the cap and another declared inside it was still
+            # observed, so it stays: the two loops are separate because the exclusion is a
+            # property of the issuer across the corpus, not of one declaration.
+            if issuer in withheld and not isinstance(doc, dict):
+                continue
             if doc is None and denominator == "observed":
                 continue
             # First document wins, deterministically: the same issuer serves the same
@@ -638,6 +662,45 @@ def issuer_documents(reports: list, denominator: str) -> dict[str, dict | None]:
             # finding for the topology rather than a reason to count the issuer twice.
             documents.setdefault(issuer, doc if isinstance(doc, dict) else None)
     return documents
+
+
+def withheld_issuer_ledger(reports: list) -> dict:
+    """Issuers we declined to request, grouped by the reason we gave at the time.
+
+    The exclusion ledger for the issuer denominators, and it exists for the same reason as
+    the endpoint one in §5.1: a denominator that shrinks without a count beside it cannot be
+    audited, and R4 permits our politeness policy to remove observations only on condition
+    that the removal is reported. The reasons are the strings `checks_oauth` recorded --
+    "not a public HTTPS host" and "beyond the N-issuer per-endpoint request cap" -- so the
+    ledger says which of our own rules cost us how much, rather than reporting one opaque
+    total.
+
+    An issuer withheld by one endpoint and observed via another is *not* withheld: it appears
+    under `also_observed_elsewhere` and stays in the denominator, because we did in the end
+    see its document.
+    """
+    withheld: dict[str, set[str]] = {}
+    observed: set[str] = set()
+    for report in reports:
+        evidence = report.evidence or {}
+        for issuer, reason in (evidence.get("as_not_fetched") or {}).items():
+            if isinstance(issuer, str):
+                withheld.setdefault(issuer, set()).add(str(reason))
+        for issuer in (evidence.get("as_documents") or {}):
+            if isinstance(issuer, str):
+                observed.add(issuer)
+
+    excluded = {i: sorted(r) for i, r in withheld.items() if i not in observed}
+    by_reason: dict[str, int] = {}
+    for reasons in excluded.values():
+        for reason in reasons:
+            by_reason[reason] = by_reason.get(reason, 0) + 1
+    return {
+        "excluded_from_denominators": len(excluded),
+        "also_observed_elsewhere": sorted(set(withheld) & observed),
+        "by_reason": dict(sorted(by_reason.items())),
+        "issuers": dict(sorted(excluded.items())),
+    }
 
 
 def issuer_rate(
@@ -788,6 +851,13 @@ def analyse(reports: list, conf: float = 0.95) -> dict:
                 graph.cross_operator_clusters(), conf).as_record(),
             "issuers_shared_across_apexes": len(graph.shared_across_apexes),
         },
+        # What our own scope policy removed from the issuer denominators, by reason. R4's rule
+        # that a politeness decision must never be written up as the operator's failure only
+        # holds if the decision is counted somewhere: an exclusion that leaves no trace is
+        # indistinguishable from an observation. Before 30 July 2026 these issuers were not
+        # excluded at all -- they were scored as "does not advertise", against C16, the
+        # first-ranked headline candidate.
+        "withheld_issuers": withheld_issuer_ledger(reports),
         "cross_check": cross_check_feasibility(reports),
         "three_unit": {
             check.value: three_unit_table(reports, check, conf)

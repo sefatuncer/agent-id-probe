@@ -13,7 +13,10 @@ from agentidprobe.analysis import (
     MAX_HEADLINE_HALF_WIDTH,
     VARIANCE_CEILING,
     VARIANCE_FLOOR,
+    _advertises_iss,
     cluster_robust_proportion,
+    issuer_documents,
+    issuer_rate,
     passes_variance_test,
     select_headline,
     student_t_cdf,
@@ -21,6 +24,7 @@ from agentidprobe.analysis import (
     three_unit_table,
     wild_cluster_bootstrap_ci,
     wilson_interval,
+    withheld_issuer_ledger,
 )
 
 # --- Student-t against published table values ---------------------------------
@@ -486,3 +490,103 @@ def test_the_published_wilson_coverage_range_is_what_the_simulation_produced():
     assert min(per_scenario) < 0.75, (
         "if the naive interval covered this well, R10.4 would need rewriting rather than citing"
     )
+
+
+# --- D8: our own scope policy must not enter the headline ----------------------
+
+
+def _issuer_report(endpoint_id, apex, issuers, as_documents=None, as_not_fetched=None):
+    from datetime import UTC, datetime
+
+    from agentidprobe.models import Endpoint, EndpointKind, EndpointReport, Modality
+    return EndpointReport(
+        endpoint=Endpoint(endpoint_id=endpoint_id, url=f"https://{apex}/mcp",
+                          kind=EndpointKind.MCP_REMOTE, source="t", apex_domain=apex),
+        modality=Modality.OAUTH_METADATA,
+        reachable=True,
+        checks=[],
+        evidence={
+            "authorization_servers": issuers,
+            "as_documents": as_documents or {},
+            "as_not_fetched": as_not_fetched or {},
+        },
+        probed_at=datetime.now(UTC),
+        run_id="r1",
+    )
+
+
+def test_an_issuer_we_declined_to_request_leaves_the_denominator():
+    """Defect D8. Reported by an adversarial review and open until 30 July 2026.
+
+    `issuer_documents` read `authorization_servers` and ignored `as_not_fetched`, so an issuer
+    the instrument deliberately never contacted -- not a public HTTPS host, or past the
+    ten-per-endpoint cap -- arrived as `None` and was counted as "does not advertise". The rate
+    that absorbed it is C16, R11.1's *first-ranked* headline candidate. So the paper's leading
+    number moved with our own request policy, in the direction that makes the ecosystem look
+    worse the harder we throttle, and R4 exists precisely to forbid that.
+
+    The numbers here are chosen so the defect is visible rather than merely possible: two
+    issuers advertise `iss` and two were never asked. Unfixed the rate is 50%; fixed it is 100%.
+    """
+    reports = [
+        _issuer_report(
+            "e1", "a.test",
+            ["https://as1.test", "https://as2.test", "https://as3.test", "https://as4.test"],
+            as_documents={
+                "https://as1.test": {"authorization_response_iss_parameter_supported": True},
+                "https://as2.test": {"authorization_response_iss_parameter_supported": True},
+            },
+            as_not_fetched={
+                "https://as3.test": "host 'as3.test' has no registrable domain",
+                "https://as4.test": "beyond the 10-issuer per-endpoint request cap",
+            },
+        )
+    ]
+    documents = issuer_documents(reports, "declared")
+    assert set(documents) == {"https://as1.test", "https://as2.test"}, (
+        "an issuer we never contacted must not appear in a denominator"
+    )
+    assert issuer_rate(reports, _advertises_iss, "declared").p_hat == 1.0
+
+
+def test_an_issuer_withheld_by_one_endpoint_but_observed_via_another_stays():
+    """The exclusion is a property of the issuer across the corpus, not of one declaration.
+
+    A popular issuer sits past the cap for the eleventh resource that names it and inside the
+    cap for the first. We did see its document, so dropping it would discard a real observation
+    -- the mirror-image error of the one above, and just as easy to write.
+    """
+    reports = [
+        _issuer_report("e1", "a.test", ["https://shared.test"],
+                       as_documents={"https://shared.test": {
+                           "authorization_response_iss_parameter_supported": True}}),
+        _issuer_report("e2", "b.test", ["https://shared.test"],
+                       as_not_fetched={"https://shared.test": "beyond the cap"}),
+    ]
+    assert set(issuer_documents(reports, "declared")) == {"https://shared.test"}
+    ledger = withheld_issuer_ledger(reports)
+    assert ledger["excluded_from_denominators"] == 0
+    assert ledger["also_observed_elsewhere"] == ["https://shared.test"]
+
+
+def test_the_withheld_ledger_names_which_of_our_rules_cost_what():
+    """R4 lets our policy remove observations only if the removal is counted.
+
+    One opaque total would not do: "not a public host" and "past the request cap" are different
+    decisions with different defences, and a reviewer asking whether the cap distorted the
+    result needs the cap's own number.
+    """
+    reports = [
+        _issuer_report(
+            "e1", "a.test", ["https://as3.test", "https://as4.test", "https://as5.test"],
+            as_not_fetched={
+                "https://as3.test": "host 'as3.test' has no registrable domain",
+                "https://as4.test": "beyond the 10-issuer per-endpoint request cap",
+                "https://as5.test": "beyond the 10-issuer per-endpoint request cap",
+            },
+        )
+    ]
+    ledger = withheld_issuer_ledger(reports)
+    assert ledger["excluded_from_denominators"] == 3
+    assert ledger["by_reason"]["beyond the 10-issuer per-endpoint request cap"] == 2
+    assert ledger["by_reason"]["host 'as3.test' has no registrable domain"] == 1
