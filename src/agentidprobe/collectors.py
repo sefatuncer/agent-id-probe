@@ -32,7 +32,33 @@ _EXTRACT = tldextract.TLDExtract(suffix_list_urls=(), fallback_to_snapshot=True)
 
 MCP_REGISTRY = "https://registry.modelcontextprotocol.io/v0/servers"
 SMITHERY_REGISTRY = "https://registry.smithery.ai/servers"
+# Glama was evaluated as a third corpus source on 30 July 2026 and **cut**. The constant stays
+# so the negative result has somewhere to live, because it is a finding about the frame rather
+# than a failed experiment.
+#
+# The API is free, keyless and cursor-paginated, so the obstacle was not access. Across 500
+# records, 280 of them tagged `hosting:remote-capable`, the response exposes eleven fields --
+# attributes, description, environmentVariablesJsonSchema, id, name, namespace, repository,
+# slug, spdxLicense, tools, url -- and **not one of them is a remote endpoint URL**. `url` is
+# always a glama.ai catalogue page (`https://glama.ai/mcp/servers/<id>`) and `repository` is a
+# source repository. There is nothing to probe.
+#
+# Wiring it in anyway would have repeated the Smithery defect exactly: that collector read
+# `homepage` as an MCP endpoint, `homepage` was a project page, and 85% of the corpus became
+# garbage with `github.com` in it sixty-six times. Here `url` is the same trap -- it is a URL,
+# it is even server-specific, and every endpoint derived from it would resolve to one apex,
+# `glama.ai`.
+#
+# The finding is reportable and belongs in the paper's frame discussion: of the three public MCP
+# registries, only `registry.modelcontextprotocol.io` publishes remote endpoint URLs. Smithery
+# does not, Glama does not. That is a ceiling on what *any* registry-framed measurement of this
+# ecosystem can observe, not a limitation of this instrument.
 GLAMA_REGISTRY = "https://glama.ai/api/mcp/v1/servers"
+GLAMA_CUT_REASON = (
+    "evaluated 2026-07-30 and cut: the API publishes no remote endpoint URL. Across 500 "
+    "records (280 tagged hosting:remote-capable) the only URL-shaped fields are a glama.ai "
+    "catalogue page and a source repository."
+)
 
 # Hosts that serve many unrelated operators' agents. Their endpoints are still measured,
 # but they are marked so the clustering analysis can separate "the platform got it wrong

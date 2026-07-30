@@ -551,3 +551,49 @@ def test_every_manifest_records_the_public_suffix_list():
 
     assert manifest["public_suffix_list"]["snapshot_sha256"]
     assert manifest["public_suffix_list"]["version"] not in ("", "unknown")
+
+
+def test_glama_is_not_a_corpus_source_and_is_not_exempt_from_the_host_ceiling():
+    """Job #7, decided 30 July 2026 inside its 15-minute budget: evaluated and cut.
+
+    The API is free, keyless and cursor-paginated, so access was never the obstacle. Across 500
+    records -- 280 of them tagged `hosting:remote-capable` -- the response carries eleven fields
+    and none is a remote endpoint URL: `url` is a glama.ai catalogue page and `repository` is a
+    source repository. There is nothing to probe.
+
+    Wiring it in would have repeated the Smithery defect precisely. That collector read
+    `homepage` as an MCP endpoint, `homepage` was a project page, and 85% of the corpus became
+    garbage. `url` here is the same trap, and worse for being server-specific: every endpoint
+    derived from it would look plausible and resolve to one apex.
+
+    Two things are asserted. No collector class exists for it, so the decision cannot be undone
+    by accident. And `glama.ai` is *not* in `unmetered_hosts`, because that exemption lifts the
+    per-host request ceiling and exists for registries we paginate — while `glama.ai` can appear
+    in the corpus as a measured platform host, which is the case the ceiling is for.
+    """
+    import agentidprobe.collectors as collectors
+    from agentidprobe.config import Scope
+
+    assert not any(
+        getattr(getattr(collectors, name, None), "source_name", None) == "glama"
+        for name in dir(collectors)
+    ), "a Glama collector exists; the API publishes no endpoint URL to collect"
+    assert "glama.ai" not in Scope().unmetered_hosts
+    assert collectors.GLAMA_CUT_REASON, "the negative result must stay recorded"
+
+
+def test_only_one_registry_publishes_remote_endpoint_urls():
+    """The finding behind the Glama cut, stated as a property of the frame.
+
+    Of the three public MCP registries, only `registry.modelcontextprotocol.io` publishes the
+    URL of a remote endpoint. Smithery's `homepage` is a project page; Glama's `url` is a
+    catalogue page. That is a ceiling on what *any* registry-framed study of this ecosystem can
+    see, and it is why the paper scopes its claim to one registry rather than presenting three
+    sources as breadth.
+    """
+    from agentidprobe.collectors import McpOfficialRegistry, SmitheryRegistry
+
+    assert McpOfficialRegistry.source_name == "mcp-official-registry"
+    # Smithery still has a collector because it is opt-in and its pagination is exercised by
+    # tests, but it contributes nothing: the field that looked like an endpoint was not one.
+    assert SmitheryRegistry.source_name == "smithery"

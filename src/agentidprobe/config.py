@@ -103,10 +103,14 @@ class Scope:
     #
     # Everything else still applies to them -- the 1 req/s throttle, robots.txt, the opt-out
     # list, the failure budget. This exempts the aggregate count and nothing more.
+    # `glama.ai` was removed on 30 July 2026 along with the decision not to collect from it:
+    # its API publishes no remote endpoint URL, so it is never enumerated and needs no
+    # exemption. Leaving it here would have exempted a host we do not paginate from a ceiling
+    # that exists to protect hosts we probe -- and `glama.ai` can appear in the corpus as a
+    # *measured* platform host, which is exactly the case the ceiling is for.
     unmetered_hosts: frozenset[str] = frozenset({
         "registry.modelcontextprotocol.io",
         "registry.smithery.ai",
-        "glama.ai",
     })
 
     wellknown_paths: tuple[str, ...] = (
