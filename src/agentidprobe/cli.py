@@ -28,7 +28,6 @@ from pathlib import Path
 from .collectors import (
     McpOfficialRegistry,
     SmitheryRegistry,
-    capture_recapture_estimate,
     merge_endpoints,
 )
 from .config import DEFAULT_CONFIG, PROBE_VERSION
@@ -65,7 +64,7 @@ async def _cmd_collect(args: argparse.Namespace) -> int:
 
         smithery_endpoints = []
         smithery_stats = None
-        if not args.official_only:
+        if args.include_smithery:
             smithery = SmitheryRegistry(fetcher, max_pages=args.max_pages)
             smithery_endpoints = await smithery.collect()
             smithery_stats = smithery.stats.as_dict()
@@ -75,10 +74,6 @@ async def _cmd_collect(args: argparse.Namespace) -> int:
     store.write_corpus(endpoints)
 
     apexes = {e.apex_domain for e in endpoints if e.apex_domain}
-    recapture = (
-        capture_recapture_estimate(official_endpoints, smithery_endpoints)
-        if smithery_endpoints else None
-    )
     store.write_manifest(
         RunContext(
             run_id=args.run_id,
@@ -91,13 +86,27 @@ async def _cmd_collect(args: argparse.Namespace) -> int:
             "sources": [official.stats.as_dict()] + ([smithery_stats] if smithery_stats else []),
             "endpoints": len(endpoints),
             "unique_apex_domains": len(apexes),
-            "capture_recapture": recapture,
         },
     )
     print(f"\ncorpus: {len(endpoints)} endpoints across {len(apexes)} apex domains")
-    if recapture:
-        print(f"capture-recapture population estimate: {recapture}")
     print(f"written to {store.corpus_path}")
+
+    # A truncated corpus is not a small corpus, it is the wrong population, and every rate
+    # computed from it is conditioned on however far pagination happened to get. The manifest
+    # has recorded `TRUNCATED` since 28 July 2026 and that was not enough: the exit code was 0,
+    # so `probe` ran next and produced a clean-looking dataset over roughly three thousand of
+    # some sixty thousand records. The paper's claim is a *census* of the frame, so the census
+    # failing has to stop the pipeline rather than annotate it.
+    truncated = [e for e in official.stats.errors + (smithery_stats or {}).get("errors", [])
+                 if e.startswith("TRUNCATED")]
+    if truncated:
+        print("\nCOLLECTION INCOMPLETE -- refusing to report this as a census:", file=sys.stderr)
+        for message in truncated:
+            print(f"  {message}", file=sys.stderr)
+        print("  Raise --max-pages and re-run. The corpus written above is a partial frame; "
+              "probing it would produce rates conditioned on where pagination stopped.",
+              file=sys.stderr)
+        return 2
     return 0
 
 
@@ -299,8 +308,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     collect = sub.add_parser("collect", help="build the corpus from free registries")
     collect.add_argument("--run-id", default=_default_run_id())
-    collect.add_argument("--max-pages", type=int, default=500)
-    collect.add_argument("--official-only", action="store_true")
+    # 5,000 pages x 100 records is 500,000, roughly eight times the registry's present size.
+    # The old default of 500 was a trial-run number that had become the census default: at
+    # 100 records a page it caps the corpus at 50,000 against some 60,000 records, so the
+    # documented behaviour of the flag was to truncate the population the study is about.
+    # A ceiling this loose cannot fire on the real registry, and if the registry ever grows
+    # past it the run now exits non-zero rather than quietly reporting a partial frame.
+    collect.add_argument(
+        "--max-pages", type=int, default=5000,
+        help="pagination ceiling per registry (default 5000 = 500k records; the run fails "
+             "rather than truncating if it is reached)")
+    # Smithery is opt-in as of 30 July 2026, inverting `--official-only`. It contributed zero
+    # usable endpoints once the `homepage`-as-endpoint defect was fixed -- that field was a
+    # project page, not an MCP endpoint, and it had been supplying 85% of the corpus as
+    # garbage -- and the capture-recapture estimate that was the other reason to query it has
+    # been withdrawn. Querying a second registry by default now means sending requests to a
+    # third party for no measurement, which docs/ETHICS.md §3 does not permit.
+    collect.add_argument(
+        "--include-smithery", action="store_true",
+        help="also query registry.smithery.ai (opt-in: it yields no remote endpoints)")
     collect.add_argument("--vantage-point", default="unspecified",
                          help="where the run originates, e.g. residential-TR")
     collect.set_defaults(func=lambda a: asyncio.run(_cmd_collect(a)))

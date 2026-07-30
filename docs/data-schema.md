@@ -73,7 +73,6 @@ reproducible, because `probe_version` alone does not say where the requests came
 | `sources` | array of objects | One `CollectionStats` record per registry queried — see table below |
 | `endpoints` | integer | Size of the merged corpus after de-duplication by `endpoint_id` |
 | `unique_apex_domains` | integer | Distinct non-null `apex_domain` values in the corpus |
-| `capture_recapture` | object \| null | Lincoln–Petersen/Chapman population estimate across two registries; null when only one registry was queried |
 
 `sources[]` (`CollectionStats.as_dict()`):
 
@@ -89,9 +88,15 @@ reproducible, because `probe_version` alone does not say where the requests came
 | `pages_fetched` | integer | Registry pages retrieved |
 | `errors` | array of strings | Pagination and parse failures — **read this, see §5 trap 2** |
 
-`capture_recapture`: `n_a`, `n_b` (integers, per-registry endpoint counts), `overlap`
-(integer), `estimate` (integer or null), and either `estimator: "Chapman"` or, when the
-overlap is zero, `note: "no overlap; the registries do not sample a shared population"`.
+**`capture_recapture` was removed on 30 July 2026** and no longer appears in a manifest.
+It held a Lincoln–Petersen/Chapman population estimate across two registries, and the estimate
+could not mean what it said: capture–recapture needs a closed population and independent
+samples, and neither holds — Smithery indexes largely what the official registry publishes, and
+servers are registered and withdrawn continuously. A number resting on two false assumptions is
+worse than the shrug it replaced, because it looks like evidence. Readers of manifests written
+before that date should ignore the key. The frame-validity question it was meant to answer is
+answered instead by reporting the frame's shape (top-*k* concentration, HHI, URL-to-apex ratio)
+and stating that the registry is not the ecosystem.
 
 ### Keys added by `rescore`
 

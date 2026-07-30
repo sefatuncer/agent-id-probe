@@ -326,19 +326,19 @@ def merge_endpoints(*groups: list[Endpoint]) -> list[Endpoint]:
     return list(merged.values())
 
 
-def capture_recapture_estimate(a: list[Endpoint], b: list[Endpoint]) -> dict:
-    """Lincoln-Petersen estimate of the total population from two registries.
+# `capture_recapture_estimate` was deleted on 30 July 2026. It computed a Lincoln-Petersen /
+# Chapman population estimate across two registries to answer "is your corpus representative?"
+# with a number, and the number would not have meant what it said. Capture-recapture requires a
+# closed population and independent samples, and both assumptions fail here: the MCP registry
+# and Smithery are not independent draws -- Smithery indexes largely what the official registry
+# publishes -- and the population is open, with servers registered and withdrawn continuously.
+# An estimate resting on two false assumptions is worse than the shrug it replaced, because it
+# looks like evidence.
+#
+# The decision to drop it was recorded before this deletion, and the live code kept computing it
+# anyway and writing it into every manifest. That gap is the reason this comment exists rather
+# than a silent removal: a frozen decision contradicted by running code is the failure mode this
+# repository keeps rediscovering, and the frame-validity question is now answered where it
+# belongs -- by reporting the frame's shape (top-k concentration, HHI, URL-to-apex ratio) and
+# stating plainly that the registry is not the ecosystem. See paper §9.1 and R10.5.
 
-    Answers the frame-validity question a reviewer will ask — "is your corpus
-    representative?" — with a number instead of a shrug.
-    """
-    ids_a = {e.endpoint_id for e in a}
-    ids_b = {e.endpoint_id for e in b}
-    overlap = len(ids_a & ids_b)
-    if overlap == 0:
-        return {"n_a": len(ids_a), "n_b": len(ids_b), "overlap": 0, "estimate": None,
-                "note": "no overlap; the registries do not sample a shared population"}
-    # Chapman's bias-corrected estimator.
-    estimate = ((len(ids_a) + 1) * (len(ids_b) + 1)) / (overlap + 1) - 1
-    return {"n_a": len(ids_a), "n_b": len(ids_b), "overlap": overlap,
-            "estimate": round(estimate), "estimator": "Chapman"}

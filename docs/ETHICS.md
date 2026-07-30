@@ -65,9 +65,18 @@ ever disagree, that is a bug in the code.
 /robots.txt
 ```
 
-Plus the public registry APIs used to build the corpus
-(`registry.modelcontextprotocol.io`, `registry.smithery.ai`), which are documented,
-keyless, read-only endpoints intended to be queried.
+Plus the public registry API used to build the corpus
+(`registry.modelcontextprotocol.io`), which is a documented, keyless, read-only endpoint
+intended to be queried.
+
+`registry.smithery.ai` was queried by default until 2026-07-30 and is now opt-in
+(`--include-smithery`), which is a change to this scope statement and not only to the data.
+Smithery contributed no usable endpoints once a defect was fixed that had been reading its
+`homepage` field as an MCP endpoint — that field is a project page, and it had been supplying
+some 85% of the corpus as garbage, `github.com` sixty-six times over. The remaining reason to
+query it, a capture–recapture population estimate, has been withdrawn as unsound. What was left
+was several hundred paginated requests to a third party in exchange for no measurement, and this
+section does not license that: every request we send has to buy an observation.
 
 `/.well-known/agent.json`, the pre-v0.3 Agent Card alias, was listed here until
 2026-07-29 and was never actually requested. It has been removed rather than implemented:

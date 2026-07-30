@@ -8,6 +8,8 @@ and became unusable as evidence when review found scoring defects.
 
 import base64
 import json
+import pathlib
+import tempfile
 from datetime import UTC, datetime
 
 import httpx
@@ -16,7 +18,6 @@ import respx
 from agentidprobe.collectors import (
     McpOfficialRegistry,
     apex_domain,
-    capture_recapture_estimate,
     classify_hosting,
     endpoint_id,
     merge_endpoints,
@@ -154,7 +155,14 @@ async def test_registry_error_is_recorded_not_raised():
     assert collector.stats.errors
 
 
-def test_merge_records_every_source_for_capture_recapture():
+def test_merge_records_every_source_that_listed_an_endpoint():
+    """Multi-source provenance survives the merge.
+
+    Renamed on 30 July 2026: the reason this mattered used to be capture-recapture, which has
+    been deleted. It still matters, for a different reason -- `source` is the only record of
+    which registry surfaced an endpoint, and R10.2's publisher-namespace sensitivity arm reads
+    it.
+    """
     shared = "https://shared-example.org/mcp"
     a = [_endpoint(shared, "mcp-official-registry"), _endpoint("https://a-example.org/mcp", "mcp")]
     b = [_endpoint(shared, "smithery")]
@@ -163,15 +171,6 @@ def test_merge_records_every_source_for_capture_recapture():
     both = next(e for e in merged if e.url == shared)
     assert "smithery" in both.source and "mcp" in both.source
 
-
-def test_capture_recapture_uses_chapman_and_reports_no_overlap():
-    a = [_endpoint(f"https://a{i}-example.org/mcp") for i in range(10)]
-    b = [_endpoint(f"https://a{i}-example.org/mcp") for i in range(5, 15)]
-    est = capture_recapture_estimate(a, b)
-    assert est["overlap"] == 5
-    assert est["estimate"] >= 15
-    assert capture_recapture_estimate(a[:2], [_endpoint("https://z-example.org/mcp")])["estimate"] \
-        is None
 
 
 # --- derived agent-card corpus ------------------------------------------------
@@ -413,3 +412,93 @@ def test_blocked_endpoint_is_not_counted_as_reachable():
                           error_kind=ErrorKind.BLOCKED)
     assert blocked.error_kind is ErrorKind.BLOCKED
 
+
+
+# --- the census must fail loudly rather than truncate quietly ------------------
+
+
+def test_the_default_pagination_ceiling_cannot_truncate_the_registry():
+    """The default is a property of the study, not a convenience.
+
+    `--max-pages` defaulted to 500 from the days when a "run" meant a few hundred endpoints.
+    At 100 records a page that caps the corpus at 50,000 against a registry holding some
+    60,000, so the *documented default behaviour* of a tool whose paper claims a census was to
+    truncate the population. The manifest recorded `TRUNCATED`, which is necessary and was not
+    sufficient: nothing read it.
+
+    The number is asserted against the page size rather than written twice, so raising one and
+    forgetting the other fails here.
+    """
+    from agentidprobe.cli import build_parser
+    from agentidprobe.collectors import McpOfficialRegistry
+
+    args = build_parser().parse_args(["collect", "--run-id", "x"])
+    capacity = args.max_pages * McpOfficialRegistry.page_size
+    assert capacity >= 500_000, (
+        f"the default ceiling admits {capacity} records; the registry held roughly 60,000 on "
+        f"30 July 2026 and a census default must have room to grow into"
+    )
+
+
+def test_smithery_is_opt_in_not_opt_out():
+    """Inverted on 30 July 2026, and it is an ethics change as much as a data one.
+
+    Smithery contributed nothing once the `homepage`-as-endpoint defect was fixed -- that field
+    is a project page, and it had been supplying 85% of the corpus as garbage, `github.com`
+    sixty-six times over. The other reason to query it, the capture-recapture estimate, has
+    been deleted. So the default behaviour was to send several hundred paginated requests to a
+    third party in exchange for no measurement, which docs/ETHICS.md §3 does not license.
+    """
+    from agentidprobe.cli import build_parser
+
+    default = build_parser().parse_args(["collect", "--run-id", "x"])
+    assert default.include_smithery is False
+    assert not hasattr(default, "official_only"), (
+        "`--official-only` was replaced by `--include-smithery`; leaving both would leave two "
+        "ways to express the same thing and one of them stale"
+    )
+    opted_in = build_parser().parse_args(["collect", "--run-id", "x", "--include-smithery"])
+    assert opted_in.include_smithery is True
+
+
+@respx.mock
+async def test_collect_exits_non_zero_when_the_corpus_was_truncated():
+    """A truncated corpus is the wrong population, not a small one.
+
+    Before 30 July 2026 truncation was recorded in the manifest and the command returned 0, so
+    `probe` ran next and produced a clean-looking dataset over a fraction of the frame. Every
+    rate in it would have been conditioned on where pagination happened to stop, and nothing in
+    the output said so. The exit code is what the next step in the pipeline actually reads.
+    """
+    import argparse
+
+    from agentidprobe.cli import _cmd_collect
+
+    # Two pages, both with a next cursor, against a ceiling of one page.
+    respx.get(url__startswith="https://registry.modelcontextprotocol.io").mock(
+        return_value=httpx.Response(200, json={
+            "servers": [{
+                "name": "io.github.example/server",
+                "remotes": [{"type": "streamable-http", "url": "https://a-example.org/mcp"}],
+            }],
+            "metadata": {"next_cursor": "more-records-remain"},
+        })
+    )
+    respx.get(url__startswith="https://registry.modelcontextprotocol.io/robots.txt").mock(
+        return_value=httpx.Response(404)
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        args = argparse.Namespace(
+            root=tmp, run_id="truncated", max_pages=1, include_smithery=False,
+            vantage_point="test",
+        )
+        assert await _cmd_collect(args) == 2
+
+        # And the partial corpus is still written, with the reason recorded: the operator needs
+        # to see what was collected in order to judge how far short it fell.
+        manifest = json.loads(
+            (pathlib.Path(tmp) / "results" / "runs" / "truncated" / "manifest.json")
+            .read_text(encoding="utf-8")
+        )
+        assert any("TRUNCATED" in e for e in manifest["sources"][0]["errors"])

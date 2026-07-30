@@ -106,7 +106,10 @@ pip install -e ".[dev,figures]"                    # adds matplotlib, nothing el
 ## Quickstart
 
 ```bash
-# 1. Build a corpus from free, keyless public registries.
+# 1. Build a corpus from the free, keyless public registry.
+#    `--max-pages 5` deliberately truncates, which is what you want for a trial: `collect`
+#    exits 2 and says so, rather than handing a partial frame to the next step. Drop the flag
+#    for a real run — the default has room for eight times the registry's present size.
 agent-id-probe collect --run-id trial --max-pages 5 --vantage-point residential-TR
 
 # 2. Sanity-check the instrument against one host. Writes nothing.
