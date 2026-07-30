@@ -2,8 +2,10 @@
 
 Endpoints run on a handful of SDKs, platforms and bulk publishers. A rate computed as
 though each endpoint were an independent draw overstates its own precision, sometimes
-severely: simulation over the shapes this corpus plausibly takes put the real coverage of a
-nominal 95% Wilson interval between 46% and 82%. Decision rule R10.4 therefore forbids
+severely: simulation over the shapes this corpus plausibly takes puts the real coverage of a
+nominal 95% Wilson interval between 20% and 88% (`scripts/wilson_coverage_under_clustering.py`,
+seeded; the range was quoted as 46%-82% here and 45%-82% in R10.4 until 30 July 2026, when the
+simulation behind it was written and turned out never to have existed). R10.4 therefore forbids
 publishing a naive interval on its own, and R11.2 decides which quantity carries the paper
 by asking whether its *cluster-robust* interval shows variance. Both of those need the
 arithmetic in this module, so it is written before the data exists rather than after — a

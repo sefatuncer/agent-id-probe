@@ -66,6 +66,9 @@ only one a reader can check.*
 | 2026-07-29 | **Funnel** | **`FUNNEL_OAUTH` now ends at C13**; it has four stages | A descriptive check cannot be a funnel stage that narrows on `PASS`: `runner.summarise()` would keep a non-advertising endpoint in the denominator and never in the numerator, which is the composition-as-failure error that produced the 36.7% vs 96.6% gap. The funnel now terminates where the paper's thesis does, at issuer correspondence |
 | 2026-07-29 | **C14 aggregation** | "any declared issuer advertised it" → **all declared issuers**, matching C16–C18 | C14 was the only funnel-stage check with an undeclared aggregation rule, and it used the most permissive one available. C13 four hundred lines away rejects exactly that reasoning: *"a resource that names five issuers of which four are dead is the thesis in miniature."* R11.5 fixed this for C16–C18 and had no C14 row |
 | 2026-07-29 | **C16 bound party** | Recorded as binding the **client**; corrected to the **authorization server** | RFC 9207 §3 — *"the authorization server MUST indicate its support for the `iss` parameter"* — is the sentence governing what C16 observes; RFC 9700 §2.1's REQUIRED binds the client and is the motivation, not the anchor. The paper's §2 already said this. C16 stays descriptive: RFC 9207 §3's MUST is conditional on supporting the parameter, so an absent flag means "does not support", which nothing forbids. Found by the Figure 1 ↔ Table 1 cross-check, not by reading |
+| 2026-07-30 | **R10.5** | **New** — what the intervals are uncertainty *about*, given a census frame; and a rate offered as a **description of the snapshot is published as a count with no interval** | The corpus is a complete enumeration, so sampling error is zero and an unexplained interval reads as sampling error — the easiest attack surface in the paper. The three real sources are named (the enumerated unit is not the unit of variation; the frame moves; one read is noisy), and the constraint that descriptive counts carry no interval is new and binding |
+| 2026-07-30 | **R10.4** | The **variance floor was written into the rule's body**; the coverage range was made consistent at 45%–82% | The floor was announced in this log on 29 July and implemented in `analysis.py` the same day, but the rule's text never stated it — the code was ahead of the pre-registration, which is exactly what makes a pre-registration unverifiable. The coverage figure appeared as both 45% and 46% in different places |
+| 2026-07-30 | **R10.3** | Rewritten: of the three "observed signals" it named, **the PRM hash had been withdrawn by R10.2 and ASN is not collected** | The rule pointed at three cluster signals of which one was live. The PRM-hash clustering was deleted on 28 July and this rule kept citing it; ASN is uncollected, which R10.2's own closing sentence forbids from feeding any decision. The operative cluster variables are apex (R10.2) and the value-free fingerprint (R10.2b) |
 | 2026-07-30 | **R9.6** | **New** — `template_placeholder` is a ninth relation class and is `UNSPECIFIED` in **both** C12 and C13 | The first real authorization-server metadata ever run through the instrument produced it. Microsoft's tenant-independent document returns `"issuer": "https://login.microsoftonline.com/{tenantid}/v2.0"`, a literal RFC 6570 placeholder, which the taxonomy classified as `same_host_different_path` → **`FAIL_MISIMPLEMENTED`**: a MUST-level violation published against the largest identity provider on the internet, in the check that is half the decisive measurement, weighted by an issuer concentration this study reports. It is not a violation — RFC 8414 §2 requires the `issuer` to be a **URL**, RFC 3986 §2 admits no braces, and Microsoft documents the endpoint as tenant-independent with substitution prescribed *instead of* exact match — so §3.3's comparison is ill-posed rather than failed, and R6 assigns that to us. The same host's tenant-specific document echoes its issuer byte for byte (captured as a control), which is what makes this a statement about one document rather than about the provider |
 | 2026-07-30 | **R9.3 / R9.5** | The taxonomy has **nine** classes, not eight; `template_placeholder` does **not** enter the R9.5 sensitivity pair | The pair exists for classes where a defensible reading would convict; here no reading convicts, because the compared value is not an identifier. Counted and reported as its own quantity instead |
 | 2026-07-30 | **C16 anchor** | Section reference corrected **§3 → §2.3**; `spec_url` now deep-links | RFC 9207 **§3 contains no MUST** — it defines the parameter and its false-by-default and nothing else. The sentence C16 is about is in **§2.3**: *"The server **MUST** indicate its support for the `iss` parameter by setting the metadata parameter `authorization_response_iss_parameter_supported` … to true."* Both the emitted `spec_ref` and the 2026-07-29 amendment row cited §3, and **every stored verdict carries the reference**, so a reviewer following it from the data landed on a section stating no obligation — the identical defect that pinned `SPEC_MCP` to a dated revision. The strength stays `SHOULD`, and the corrected citation is *why*: §2.3's MUST is conditioned on *"Authorization servers supporting this specification"*, so an absent flag means "does not support", which nothing forbids |
@@ -562,8 +565,18 @@ the mistake that voided the old go/no-go criterion (resting on an unmeasured qua
 
 ### R10.3 — A hand-written platform list cannot be a cluster variable
 
-`_KNOWN_PLATFORM_SUFFIXES` is for **labelling** only. The hosting class is derived from
-observed signals (shared certificate, ASN, PRM hash).
+`_KNOWN_PLATFORM_SUFFIXES` is for **labelling** only, never for clustering: a list of
+platform suffixes written by the authors is the authors' rubric, which is the objection
+R10.2 was rewritten to eliminate.
+
+The hosting class is derived from observed signals. **Amended 30 July 2026:** this rule named
+three, of which two do not exist. The *PRM hash* was the clustering deleted by R10.2 on
+28 July, so it survived here as a reference to a rule that had been withdrawn; and *ASN* is
+not collected at all, which R10.2's own closing sentence forbids from feeding any decision.
+What remains and is real is the **shared TLS certificate**, collected but not compared, and
+therefore also a sensitivity arm rather than an input. The operative cluster variables are
+the two in R10.2 and R10.2b — apex domain and the value-free implementation fingerprint — and
+this rule now says so instead of pointing at three signals of which one was live.
 
 ### R10.4 — Uncertainty is reported against the number of clusters
 
@@ -571,7 +584,57 @@ The cluster-robust confidence interval for a rate is `t(m-1)`-based because `m` 
 when `m < 30` it is also given by a wild cluster bootstrap-t (Rademacher). Every rate is
 written with `m` (the number of clusters), DEFF and `n_eff` beside it. The naive Wilson
 interval is **not published on its own**: under clustering its real coverage is not 95% but
-45%–82%, depending on the scenario.
+**20%–88%**, depending on the scenario — at `m = 300` clusters with a shared SDK default it is
+**20%**. The figure is produced by `scripts/wilson_coverage_under_clustering.py`, seeded, over a
+grid that deliberately includes the friendly shapes; `tests/test_analysis.py` holds the quoted
+range against what the script computes.
+
+**The variance floor.** *(Written into the body 30 July 2026. The floor was announced in the
+amendment log on 29 July and implemented in `analysis.py` the same day, but the rule's own
+text never stated it — so for a day the code was ahead of the pre-registration, which is
+precisely the direction that makes a pre-registration unverifiable.)*
+
+A published interval **may not be narrower than the simple-random-sample interval for the
+same `k` and `n`.** Clustering may only widen. The between-cluster estimator omitted
+within-cluster binomial variance, so `n_eff` could exceed `n` — by a factor of 313 in the case
+found — and at `n = 1000` an interval of `49.9% [49.7%–50.1%]` was publishable. Equality
+guards are not sufficient here and the first attempt used one: a `var == 0.0` test is passed
+by a single endpoint's worth of drift. The floor is therefore a floor and not a special case,
+and the bootstrap carries a zero-width guard for the same reason.
+
+### R10.5 — What the intervals are uncertainty *about*, given that the corpus is a census
+
+**New, 30 July 2026, written before the data.** The corpus is a complete enumeration of the
+registry frame at one instant, not a sample drawn from it. Sampling error over a complete
+enumeration is zero, so reporting a confidence interval requires saying what varies — and
+leaving that unstated would let the intervals be read as sampling error, which would be the
+single easiest thing in this paper to attack.
+
+None of the three sources of uncertainty reported is sampling error:
+
+1. **The enumerated unit is not the unit of variation.** What varies independently is
+   implementations and operators, not endpoints: an SDK's default document is reproduced by
+   every deployment using it, and a bulk publisher's hundreds of listings are one
+   configuration decision recorded many times. Even with every endpoint in hand the number of
+   independent realisations is `m`, not `n`. This is why R10.1 reports three units and why
+   R10.4 prints `m`, DEFF and `n_eff` beside every rate: they are the quantity, not
+   diagnostics of it.
+2. **The frame moves.** Endpoints are registered and withdrawn continuously, so the snapshot
+   is one realisation of a process. The estimand is the process's propensity.
+3. **One read of the frame is noisy.** Blocking, rate limiting and transient outages mean the
+   observed value is a noisy measurement even of the instant it describes — which is what R5's
+   two runs at ≥24 hours exist to bound.
+
+**Two binding consequences:**
+
+- A quantity offered as a **description of the snapshot** — *"`k` of `n` endpoints in this
+  snapshot declared an issuer they do not operate"* — is published as a count with **no
+  interval**. There is nothing to be uncertain about, and attaching one would misrepresent
+  what was measured.
+- An interval is attached only to a rate offered as an estimate of a propensity, and it
+  licenses **no** generalisation beyond the frame. Uncertainty about registered endpoints is
+  not uncertainty about deployed ones; the frame's relationship to the ecosystem is a
+  limitation, not an interval.
 
 ---
 

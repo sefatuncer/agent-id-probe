@@ -1,0 +1,76 @@
+{
+  "schema": "agent-id-probe/wilson-coverage/1",
+  "seed": 20260730,
+  "trials_per_scenario": 4000,
+  "nominal_coverage": 0.95,
+  "quoted_range": [
+    0.2,
+    0.88
+  ],
+  "note": "Real coverage of a nominal 95% Wilson interval when endpoints are clustered. The `quoted_range` bounds are what analysis.py's docstring and decision rule R10.4 are permitted to state; tests/test_analysis.py enforces the match. Regenerate with scripts/wilson_coverage_under_clustering.py --write.",
+  "scenarios": [
+    {
+      "scenario": "few large clusters, full agreement",
+      "clusters": 30,
+      "n": 61,
+      "zipf_exponent": 1.4,
+      "rho": 1.0,
+      "propensity": 0.5,
+      "naive_wilson_coverage": 0.6515
+    },
+    {
+      "scenario": "few large clusters, partial agreement",
+      "clusters": 30,
+      "n": 61,
+      "zipf_exponent": 1.4,
+      "rho": 0.5,
+      "propensity": 0.5,
+      "naive_wilson_coverage": 0.8788
+    },
+    {
+      "scenario": "many clusters, full agreement",
+      "clusters": 300,
+      "n": 1314,
+      "zipf_exponent": 1.1,
+      "rho": 1.0,
+      "propensity": 0.5,
+      "naive_wilson_coverage": 0.2013
+    },
+    {
+      "scenario": "many clusters, partial agreement",
+      "clusters": 300,
+      "n": 1314,
+      "zipf_exponent": 1.1,
+      "rho": 0.5,
+      "propensity": 0.5,
+      "naive_wilson_coverage": 0.3935
+    },
+    {
+      "scenario": "heavy tail, full agreement",
+      "clusters": 80,
+      "n": 132,
+      "zipf_exponent": 1.8,
+      "rho": 1.0,
+      "propensity": 0.5,
+      "naive_wilson_coverage": 0.7418
+    },
+    {
+      "scenario": "rate near the edge, full agreement",
+      "clusters": 300,
+      "n": 1314,
+      "zipf_exponent": 1.1,
+      "rho": 1.0,
+      "propensity": 0.9,
+      "naive_wilson_coverage": 0.2218
+    },
+    {
+      "scenario": "rate near the edge, heavy tail",
+      "clusters": 80,
+      "n": 132,
+      "zipf_exponent": 1.8,
+      "rho": 1.0,
+      "propensity": 0.9,
+      "naive_wilson_coverage": 0.736
+    }
+  ]
+}

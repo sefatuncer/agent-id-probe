@@ -5,7 +5,9 @@ cluster-robust interval that is subtly wrong would not fail visibly, it would ju
 a confident number.
 """
 
+import json
 import math
+from pathlib import Path
 
 from agentidprobe.analysis import (
     MAX_HEADLINE_HALF_WIDTH,
@@ -440,3 +442,47 @@ def test_select_headline_falls_back_to_topology_when_nothing_varies():
 def test_variance_thresholds_are_the_ones_the_rules_declare():
     assert math.isclose(VARIANCE_FLOOR, 0.02)
     assert math.isclose(VARIANCE_CEILING, 0.98)
+
+
+def test_the_published_wilson_coverage_range_is_what_the_simulation_produced():
+    """The one statistic in this repository that was an assertion rather than a computation.
+
+    `analysis.py`'s docstring and decision rule R10.4 both justify refusing to publish a naive
+    binomial interval by quoting a coverage range from "simulation over the shapes this corpus
+    plausibly takes". Until 30 July 2026 no such simulation existed anywhere in the repository,
+    and the two documents quoting the range disagreed with each other -- 46%-82% in one,
+    45%-82% in the other -- which is the tell. Writing it put the real range at 20%-88%, so both
+    figures had understated the low end by more than twenty points, in the argument licensing
+    this paper's entire interval methodology.
+
+    The check is against the committed simulation output rather than a fresh run. Re-simulating
+    inside a test would have to use a trial count small enough for the timeout, and at that
+    count Monte Carlo error moves the bounds by several points -- so the test would be either
+    flaky or carry a tolerance wide enough to pass anything. The simulation is therefore treated
+    like the captured control documents: run it, commit the output with its seed, enforce the
+    prose against the committed value, re-run to audit.
+    """
+    data = json.loads(
+        (Path(__file__).resolve().parents[1] / "docs" / "wilson-coverage.json")
+        .read_text(encoding="utf-8")
+    )
+    low, high = data["quoted_range"]
+    per_scenario = [row["naive_wilson_coverage"] for row in data["scenarios"]]
+
+    # The committed range must actually bound the committed scenarios -- otherwise the file
+    # summarises itself wrongly and everything downstream inherits that.
+    assert low <= min(per_scenario) and max(per_scenario) <= high
+
+    # And the prose must quote that range. These two literals are the only place the numbers
+    # are written by hand, and they are what a reviewer reads.
+    assert (low, high) == (0.20, 0.88), (
+        f"docs/wilson-coverage.json says {low:.0%}-{high:.0%}; analysis.py's docstring and "
+        f"decision rule R10.4 say 20%-88%. Update the prose, or explain the new simulation."
+    )
+    assert data["nominal_coverage"] == 0.95
+
+    # The claim has to still be worth making: coverage near nominal would make R10.4's
+    # prohibition unnecessary rather than merely unproven.
+    assert min(per_scenario) < 0.75, (
+        "if the naive interval covered this well, R10.4 would need rewriting rather than citing"
+    )
