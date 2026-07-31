@@ -316,8 +316,34 @@ The realistic worst case is that a fragile endpoint is disturbed by our requests
    address.
    > `README.md` opens with that block, addressed to an operator who has just found our
    > `User-Agent` in their logs: what we requested, why, and the one line that stops it.
-3. [ ] A narrow slice (~200 endpoints) has been run and its block rate, error budget, and
+3. [x] A narrow slice (~200 endpoints) has been run and its block rate, error budget, and
    rate-limit behaviour reviewed.
+   > Run on 30 July 2026 from the residential Turkish vantage point, over 200 endpoints on
+   > 200 distinct apex domains — one per operator before a second from any, by `endpoint_id`
+   > rather than corpus order, because corpus order is registry pagination order and
+   > correlates with WAF presence, which is the block rate this exercise exists to measure
+   > (`runner.rehearsal_slice`).
+   >
+   > **Block rate.** 30 of 198 endpoints did not answer, of which **17 were excluded by
+   > `robots.txt`** — our own policy, not their reception of us. Genuinely unreachable or
+   > blocked: **13 of 198 (6.6%)**, against the 25% abort ceiling. One access block, seven
+   > timeouts, three DNS failures, one connection failure, one TLS failure. No opt-outs.
+   >
+   > **Error budget.** Comfortable. The number that mattered was not its size but its
+   > composition: more than half of the apparent failure rate was us.
+   >
+   > **Rate-limit behaviour.** No 429 and no `Retry-After` was returned by any host, and no
+   > host exhausted its failure budget. The one request-shaped problem was ours: two endpoints
+   > held a worker for over 35 minutes because MCP answers GET with an event stream and
+   > httpx's read timeout is per-read.
+   >
+   > **The review's actual output was four defects, all in the instrument, all fixed before
+   > the census** (commits `eb76e5b`, `d46e797`, `e92d493`): the per-host request ceiling
+   > would have recorded a fifth of the corpus as unreachable and aborted the run (R10.6);
+   > `robots.txt` exclusions were feeding the abort counter; no request had a total deadline
+   > and the `robots.txt` path had no bound at all; and authorization posture was inferred
+   > from a 401 alone, which hid 27 endpoints that publish metadata without challenging
+   > (R10.7). A rehearsal that had found nothing would have been the worrying outcome.
 4. [x] `docs/decision-rules.md` is frozen **and committed**, and the instrument passes its
    conformance fixtures.
    > Both halves were unmet on 28 July and the box was wrongly ticked then. Both are now

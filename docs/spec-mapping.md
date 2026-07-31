@@ -93,6 +93,34 @@ C05 therefore **cannot be applied unconditionally**: it applies only to endpoint
 of PRM is not a violation but `NOT_APPLICABLE`. In the pilot, **179 (37.9%)** of 472 reachable
 endpoints met this condition → that, and not 472, is C05's real denominator.
 
+> **⚠️ Observation and applicability were the same test until 30 July 2026, and should not
+> have been (R10.7).** The paragraph above is unchanged as a statement about *penalty*: a 401
+> or 403 is still the only thing that lets C05 convict, and an open server is still
+> `NOT_APPLICABLE`. What was wrong is that the instrument used the same test to decide whether
+> to **look**, so a challenge was the only way an endpoint could enter the funnel at all.
+>
+> The narrow-slice rehearsal measured the cost over 164 reachable endpoints. 50 challenged;
+> **59 answered `405 Method Not Allowed` or 406**, which is what a server returns when it
+> routes on HTTP method before consulting authorization — our GET never reached the layer
+> being measured. The undetermined group was **larger than the denominator**, and membership
+> in it was decided by a framework's middleware order rather than by anything about
+> authorization, so its direction cannot be signed.
+>
+> Asking those endpoints for the document directly (`docs/method-gate-probe.json`) found **11
+> of the 59** publishing protected-resource metadata, and **16 of the 32** that answered 200,
+> against **37 of the 50** that challenged — the control group, which is what makes the other
+> two numbers readable rather than evidence of a broken probe. **27 endpoints were declaring
+> an authorization server, in a document at a well-known path, while the instrument recorded
+> them as endpoints that do not use authorization.**
+>
+> The metadata is now requested for every reachable endpoint. Note what is *not* done: the
+> denominator is **not** redefined as "challenged **or** publishes metadata". That is circular
+> for a check whose numerator is publishing metadata, and it would raise the rate
+> mechanically. C05's denominator stays the endpoints that challenged. The population that
+> grows is the one carrying **C12 and C13**, whose denominator is *documents read* rather than
+> a posture inferred, and which are therefore immune to this bias in a way C05 is not — in the
+> rehearsal, from 36 to roughly 64.
+
 **C05 — mandatory if authorization is used.**
 > *"MCP servers **MUST** implement OAuth 2.0 Protected Resource Metadata (RFC9728). MCP
 > clients **MUST** use OAuth 2.0 Protected Resource Metadata for authorization server
