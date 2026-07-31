@@ -1,12 +1,13 @@
 """Command line entry point.
 
-Seven verbs, matching the things a reviewer needs to be able to redo:
+Eight verbs, matching the things a reviewer needs to be able to redo:
 
     collect    build the corpus from free registries
     probe      run the measurement, resumable
     summarise  read stored reports and print the funnels
     analyse    execute decision rule R11 and write the headline transcript
     rescore    re-score stored artefacts with no network (decision rule R8, leg 2)
+    reconcile  settle which ERRORs are final across two runs (decision rule R5)
     figures    render Figures 1 and 2, from a run or from the synthetic fixture
     dry-run    probe a handful of endpoints and print everything, no persistence
 
@@ -33,6 +34,7 @@ from .collectors import (
 from .config import DEFAULT_CONFIG, PROBE_VERSION
 from .fetcher import Fetcher
 from .models import Modality, RunContext
+from .reconcile import MIN_SEPARATION_HOURS, RunSide, reconcile_runs
 from .replay import compare_reports
 from .runner import (
     Runner,
@@ -225,6 +227,86 @@ def _cmd_analyse(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_side(root: Path, run_id: str):
+    """One run's reports, plus the vantage point its manifest records.
+
+    The manifest's `started_at` is deliberately not read. `probe` writes no manifest, so the
+    one in a probed run's directory belongs to `collect` -- in `results/runs/slice2/` it is
+    byte-identical to `slice`'s, `"run_id": "slice"` included. R5's interval comes from the
+    reports' own `probed_at`; see `reconcile.py`.
+    """
+    store = RunStore(root, run_id)
+    reports = store.read_reports()
+    if not reports:
+        return None, store
+    context = (store.read_manifest().get("run_context") or {})
+    return RunSide(run_id=run_id, reports=reports,
+                   vantage_point=context.get("vantage_point")), store
+
+
+def _cmd_reconcile(args: argparse.Namespace) -> int:
+    """Execute decision rule R5 across two runs and write the transcript beside the later one.
+
+    R5 is the rule that says which errors are real: an `ERROR` is final only once it has
+    recurred in a second run at least 24 hours later, and the rest are reported separately
+    and left out of the denominator. It had no implementation until 31 July 2026 and no way
+    to be run, which meant the census had no way to distinguish a host that is down from a
+    host that was down. `rescore --verify` was the nearest thing in the repository and
+    answers a different question -- see the module docstring in `reconcile.py`.
+
+    The transcript is written rather than printed for the same reason R11's is: a rule whose
+    output exists only in a terminal scrollback cannot be checked by anyone afterwards, and
+    "we confirmed these errors across two runs" is precisely a claim a reader is entitled to
+    audit line by line.
+    """
+    root = Path(args.root)
+    if args.run_id == args.against:
+        # A run against itself reproduces every error by construction and would report the
+        # whole error set as confirmed. The separation gate below would also catch it, but
+        # not before writing a transcript that reads like a finding.
+        print("--run-id and --against name the same run; R5 needs two separate runs",
+              file=sys.stderr)
+        return 2
+
+    sides = []
+    for run_id in (args.run_id, args.against):
+        side, store = _load_side(root, run_id)
+        if side is None:
+            print(f"no reports at {store.reports_path}", file=sys.stderr)
+            return 2
+        sides.append(side)
+
+    result = reconcile_runs(sides[0], sides[1], min_hours=args.min_hours)
+
+    later_id = result["runs"]["later"]["run_id"]
+    destination = (Path(args.out) if args.out
+                   else RunStore(root, later_id).run_dir / "reconciliation.json")
+    destination.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n",
+                           encoding="utf-8")
+
+    separation = result["separation"]
+    measured = ("unknown" if separation["hours"] is None
+                else f"{separation['hours']:.1f} h")
+    print(f"R5 reconciliation: {result['runs']['earlier']['run_id']} -> {later_id}, "
+          f"{measured} apart (need {separation['required_hours']:g} h)")
+    for table in ("reachability", "checks"):
+        counts = result["counts"][table]
+        # Printed on separate lines, never added together: an unreachable endpoint appears
+        # once here and once per check, so a single total would multiply it by six.
+        shown = "  ".join(f"{name}={n}" for name, n in sorted(counts.items()) if n)
+        print(f"  {table:<13} {shown or 'no errors to reconcile'}")
+    for note in result["notes"]:
+        print(f"  ! {note}")
+    print(f"\nwritten to {destination}")
+
+    if not result["final_errors_established"]:
+        # Exit 1, as `rescore --verify` does for a failed check: the command ran and the
+        # transcript is valid, but what it describes is not an R5 confirmation and a
+        # pipeline must not proceed as though it were.
+        return 1
+    return 0
+
+
 def _cmd_figures(args: argparse.Namespace) -> int:
     """Render Figures 1 and 2, from a stored run or from the synthetic fixture.
 
@@ -402,6 +484,25 @@ def build_parser() -> argparse.ArgumentParser:
     analyse_cmd.add_argument("--run-id", required=True)
     analyse_cmd.add_argument("--conf", type=float, default=0.95)
     analyse_cmd.set_defaults(func=_cmd_analyse)
+
+    reconcile_cmd = sub.add_parser(
+        "reconcile", help="decision rule R5: which ERRORs recur across two runs")
+    reconcile_cmd.add_argument("--run-id", required=True)
+    reconcile_cmd.add_argument("--against", required=True,
+                               help="the other run id. Order does not matter: the runs are "
+                                    "sorted by when they observed and the transcript "
+                                    "records which was earlier")
+    # Overridable so a rehearsal can be reconciled the same day, and recorded in the
+    # transcript when it is: a run that lowered R5's own threshold has to say so in the file,
+    # not in whoever's memory ran the command.
+    reconcile_cmd.add_argument("--min-hours", type=float, default=MIN_SEPARATION_HOURS,
+                               help="hours the two runs must be apart (R5 default: 24). "
+                                    "Below it the command still writes the transcript and "
+                                    "exits 1, because no ERROR is final")
+    reconcile_cmd.add_argument("--out", default=None,
+                               help="transcript path (default: reconciliation.json beside "
+                                    "the later run)")
+    reconcile_cmd.set_defaults(func=_cmd_reconcile)
 
     figures_cmd = sub.add_parser(
         "figures", help="render Figures 1 and 2 (needs the optional 'figures' extra)")

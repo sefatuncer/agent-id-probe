@@ -40,6 +40,7 @@ only one a reader can check.*
 
 | Date | Rule | Amendment | Rationale |
 |---|---|---|---|
+| 2026-07-31 | **R5** | **Implemented, not amended.** The classification and the ≥24 h check now execute as `agent-id-probe reconcile`, which writes `reconciliation.json` beside the later run. R5 keeps its 📋 marker: no code can make the second run happen. Three additions the rule's one sentence does not settle, fixed here before any data: (a) the unit is **both** `reachable` and each check outcome, counted in **separate tables**; (b) errors caused by **our own policy** — opt-out, `robots.txt`, the per-host ceiling — are a third class, never "persistent"; (c) a unit scored in only one run is **`unreconciled`**, not transient | R5 was prose in this file, cited by three source comments and two tests, and executed by nothing. The nearest thing in the repository was `replay.compare_reports`, which compares a run against its own re-score — R8's leg 2, where both sides come from the same bytes and every error reproduces by construction. Each addition prevents a measured error: on the two rehearsal runs the policy class holds **17 of 30** unreachable endpoints, all `robots.txt`, so without (b) the confirmed-error count reads **30 instead of 13** and our politeness policy is published as a stable property of third-party deployments — the same inversion as the kill-switch and per-host-ceiling defects above. Without (c) the 16 endpoints present in only one of those runs would have counted as errors that recovered. The interval is measured from `probed_at` and never from the manifest: `probe` writes no manifest, and `rescore` writes a **fresh** one over copied verdicts, so a replay taken a day later would otherwise present as a second run in which every error recurred |
 | 2026-07-30 | **R10.7** | **New** — protected-resource metadata is requested for **every reachable endpoint**, not only for those that answered 401/403 | The rehearsal found that a challenge was the only entry into the OAuth funnel, and that the group it excluded was **larger than the denominator**: 50 endpoints challenged, 59 answered `405`/`406`, and 32 answered 200. Asking those groups directly (`docs/method-gate-probe.json`) found **27 endpoints declaring an authorization server** in a document at a well-known path while the instrument recorded them as not using authorization. Membership in the excluded group is decided by a framework's middleware order — a selection whose direction cannot be signed. Verdicts are unchanged and C05 can still only convict an endpoint that challenged; defining the denominator as "challenged **or** publishes metadata" is circular for C05 and is refused. What grows is the population carrying C12/C13, whose denominator is documents read rather than posture inferred: 36 → ~64 in the rehearsal |
 | 2026-07-30 | **R10.6** | **New** — endpoints on one hostname are **sampled**, at most 25, chosen deterministically by `endpoint_id`; the remainder is a named, counted exclusion. **R10.5 is qualified**: the census claim stays exact at the hostname, apex and implementation units and is no longer exact at the endpoint unit | Found by the narrow-slice rehearsal, before the census. The 30-request per-host ceiling and the shape of the corpus are incompatible: 2,015 of 10,653 endpoints sit on eleven hostnames, one of which carries 1,281. At two to six requests each the ceiling was spent after a handful, the rest returned `OUT_OF_SCOPE` with `reachable=False`, and about a fifth of the corpus would have been counted as unreachable — enough to trip the abort and blame the ecosystem for our own configuration. Raising the ceiling would have sent one operator some 7,700 requests, which is what it was added to prevent. Sampling costs a claim (at the endpoint unit this is a census of hostnames and a sample within the large ones) and the paper states it; the frame is preserved in `corpus.jsonl`, so the sampling fraction stays checkable |
 | 2026-07-30 | **R4 / ETHICS §10** | Robots-excluded endpoints **leave the kill switch's failure counter**, and are counted separately | The same rehearsal measured it rather than arguing it: 17 of 198 endpoints were excluded by `robots.txt`, which was 8.6 of the 15.2 percentage points the switch was reading. §10 defines its threshold over endpoints that were *"unreachable or blocked"*, and a robots exclusion is neither — we reached the host, read its rules, and chose not to ask. Identical in form to the opt-out fix of 29 July, on the branch that was missed then. With Okta and Auth0 both serving `Disallow: /` (ETHICS §6.1), a stratum heavy in hosted identity platforms could have aborted the census on a property of the ecosystem |
@@ -161,6 +162,41 @@ WAFs). The block-detection heuristic lives in `fetcher.py` and is fixed before c
 An `ERROR` becomes final only when, after `max_retries` is exhausted, it produces the same
 result in **at least 2 separate runs ≥24 hours apart**. Single-run ERRORs are reported
 separately in the analysis and removed from the denominator.
+
+**Executed by `agent-id-probe reconcile --run-id <a> --against <b>`**, which writes
+`reconciliation.json` beside the later run and exits non-zero when the two runs are closer
+together than 24 hours. The marker stays 📋 because the part that cannot be machine-enforced
+is the part that matters: no code can make the second run happen a day later. What code does
+is classify and check.
+
+Four things the sentence above does not settle, fixed before the census rather than while
+reading its output:
+
+* **The unit is both levels.** `runner.summarise()` drops errors twice — the first funnel
+  stage on `reachable`, every later stage on that stage's check outcome — and they are not
+  the same set. Both are reconciled, and they are **counted in separate tables**: an
+  unreachable endpoint contributes one reachability unit *and* one unit per check, so a
+  single total would multiply it by six and call the result an error count.
+* **Our own exclusions are a third class, never "persistent".** An opt-out, a `robots.txt`
+  exclusion and the per-host request ceiling all produce `ERROR` and all three reproduce in
+  run 2 with near-certainty, so on outcome alone they are indistinguishable from a host that
+  is genuinely and stably unreachable. On the two rehearsal runs this class holds **17 of the
+  30** unreachable endpoints — every one of them `robots.txt` — so counting it would report
+  **30 confirmed errors instead of 13**. R5 also has nothing to reconcile there: it confirms
+  an error by re-asking, and for an opted-out operator re-asking is the promise being broken.
+  A block (`ErrorKind.BLOCKED`) is deliberately *not* in this class: a WAF is the operator's
+  infrastructure answering, and whether it is stable across a day is exactly what R5
+  establishes.
+* **"Not scored in both runs" is not "recovered".** An endpoint the corpus no longer
+  contains, one the per-host sample dropped (R10.6), or one the kill switch never reached is
+  reported as `unreconciled`. Sixteen of the rehearsal's endpoints are in this state. Calling
+  them transient would count our own truncated run as evidence that hosts recovered.
+* **The interval comes from `probed_at`, never from the manifest.** `probe` writes no
+  manifest, so the `started_at` in a probed run's directory is `collect`'s — in
+  `results/runs/slice2/` it is byte-identical to `slice`'s and still says `"run_id": "slice"`.
+  `rescore` is worse: it writes a fresh manifest stamped with the current time over verdicts
+  copied from stored bytes, so a replay taken a day after its source would present as two
+  runs 25 hours apart in which every error recurred.
 
 ---
 

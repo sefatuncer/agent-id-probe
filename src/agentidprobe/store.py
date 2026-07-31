@@ -202,6 +202,24 @@ class RunStore:
                 latest[(report.endpoint.endpoint_id, report.modality.value)] = report
         return list(latest.values())
 
+    def read_manifest(self) -> dict:
+        """The run's own provenance, or `{}` if it has none.
+
+        Missing rather than fatal: decision rule R5 measures the interval between two runs
+        from this file when it is there and from the reports' own `probed_at` when it is
+        not, and a run collected before manifests carried a start time must still be
+        reconcilable. Which of the two was used is recorded in the R5 transcript, because
+        "24 hours apart" measured from a start time and from the first probe are different
+        claims.
+        """
+        if not self.manifest_path.exists():
+            return {}
+        try:
+            payload = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
     def read_corpus(self) -> list[Endpoint]:
         endpoints: list[Endpoint] = []
         if not self.corpus_path.exists():
