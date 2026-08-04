@@ -386,25 +386,38 @@ The realistic worst case is that a fragile endpoint is disturbed by our requests
    > is verbatim-verified and carries the check alone. The two that did not (`none` and `HS*`,
    > which RFC 7518 §3.6 and RFC 8725 do not reach in the way the check assumed) now score
    > `UNSPECIFIED`.
-5. [ ] The ethics-board determination in §12 has been requested.
+5. [x] Institutional review is settled: **none is required and none was sought** (§12).
+   > Withdrawn as a precondition on 5 August 2026. It had been listed as "the determination
+   > has been requested", which made the run wait on a step that was never going to be taken
+   > — and §12's own first sentence already establishes that no approval is required. A
+   > precondition that cannot be met does not protect anybody; it just makes the checklist
+   > untrue. The residual reviewer exposure is recorded in §12 instead of being retired.
 6. [x] The opt-out list (`docs/opt-out.txt`) exists and is enforced in the fetcher.
 7. [x] The global abort threshold is set in code (`AbortPolicy`), not only in this document.
 
 ## 12. Institutional review
 
 No human subjects are involved and no personal data is sought, so this study does not
-constitute human-subjects research and formal IRB approval is not required.
+constitute human-subjects research and formal IRB approval is not required. **No institutional
+ethics-board determination was sought, and this document does not claim one.**
 
-We nonetheless **request a written determination to that effect** from the Muğla Sıtkı Koçman
-University ethics board. It is free, it does not put anyone on the critical path, and
-*"our ethics board confirmed this is not human-subjects research"* is a materially stronger
-answer to a reviewer than *"we decided it wasn't."* Measurement venues increasingly ask.
+An earlier revision of this file said we would request a written determination to that effect
+and made it a precondition for the run. That was a self-imposed nice-to-have, not an external
+requirement, and it is withdrawn on 5 August 2026 rather than left as an unmet commitment: an
+ethics document that promises a step nobody takes is worse than one that does not promise it,
+and every protection this study actually offers the parties it measures is elsewhere in this
+file and enforced in code — the opt-out list, `robots.txt`, the per-host request ceiling and
+endpoint cap, the request-rate policy, the abort threshold, and the fact that no request
+attempts authentication, carries a credential, or writes anything.
 
-A closely related study in this exact area — arXiv 2603.07473, on caller identity confusion
-in MCP — was **withdrawn by its authors in July 2026** citing *"unresolved ethical issues in
-data collection"* and the need to *"obtain proper ethical clearance before resubmission."*
-That is the risk this section exists to retire, and it is the reason this document is a
-precondition for the run rather than a section written up afterwards.
+**The residual risk is stated rather than retired.** A reviewer may ask what institutional
+review took place, and the answer will be "none, for the reason in the first paragraph." A
+closely related study in this exact area — arXiv 2603.07473, on caller identity confusion in
+MCP — was **withdrawn by its authors in July 2026** citing *"unresolved ethical issues in data
+collection"* and the need to *"obtain proper ethical clearance before resubmission."* We record
+that precedent here because it is the specific way this could go wrong, and because the honest
+position is that we judged the exposure acceptable given the passive method and the published
+scope — not that the question never arose.
 
 ## 13. Vantage point disclosure
 
