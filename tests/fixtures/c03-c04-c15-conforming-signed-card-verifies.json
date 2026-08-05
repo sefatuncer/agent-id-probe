@@ -17,23 +17,23 @@
     {
       "source": "A2A",
       "section": "Agent Discovery",
-      "url": "https://a2a-protocol.org/latest/topics/agent-discovery/",
+      "url": "https://a2a-protocol.org/v0.3.0/topics/agent-discovery/",
       "quote": "The standard path is https://{agent-server-domain}/.well-known/agent-card.json",
       "verification": "verbatim-verified in docs/spec-mapping.md"
     },
     {
-      "source": "A2A",
-      "section": "8.4",
+      "source": "A2A v1.0.1, OUTSIDE the revision decision rule R7 pins",
+      "section": "8.4.1 (Canonicalization Requirements)",
       "url": "https://a2a-protocol.org/latest/specification/",
       "quote": "the Agent Card content MUST be canonicalized using the JSON Canonicalization Scheme (JCS) as defined in RFC 8785",
-      "verification": "UNVERIFIED. docs/spec-mapping.md marks C02/C03/C04 with a warning: the published page truncates 8.4 and these sentences could not be confirmed in an independent round. The fixture therefore pins instrument behaviour, and the anchor must be confirmed before any rate derived from it is published."
+      "verification": "RESOLVED 5 August 2026, and the answer is that the anchor does not exist. Earlier rounds recorded that A2A 8.4 'could not be retrieved'; it could not be retrieved because A2A v0.3.0 -- the revision decision rule R7 pins -- has no 8.4, no 4.4.7, no reference to RFC 8785, and no RFC 2119 keyword anywhere about card signatures. AgentCardSignature is 5.5.6 and defines a data structure. Those sections exist in v1.0, which R7 does not admit. C03 and C04 are therefore descriptive-only and this fixture pins a recorded observation, not a conviction."
     },
     {
       "source": "RFC 7515",
       "section": "5.2 (Message Signature or MAC Validation)",
       "url": "https://www.rfc-editor.org/rfc/rfc7515.html#section-5.2",
       "quote": "If any of the listed steps fails, then the signature or MAC cannot be validated. ... the JWS MUST be considered invalid.",
-      "verification": "paraphrase of RFC 7515 5.2's failure clause, NOT confirmed verbatim. checks_signed.py cites `RFC 7515` without a sentence; confirm before publication."
+      "verification": "RESOLVED 5 August 2026, and the answer is that the anchor does not exist. Earlier rounds recorded that A2A 8.4 'could not be retrieved'; it could not be retrieved because A2A v0.3.0 -- the revision decision rule R7 pins -- has no 8.4, no 4.4.7, no reference to RFC 8785, and no RFC 2119 keyword anywhere about card signatures. AgentCardSignature is 5.5.6 and defines a data structure. Those sections exist in v1.0, which R7 does not admit. C03 and C04 are therefore descriptive-only and this fixture pins a recorded observation, not a conviction."
     }
   ],
   "endpoint": {

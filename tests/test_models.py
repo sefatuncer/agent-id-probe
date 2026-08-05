@@ -114,7 +114,7 @@ def test_r1_allows_unspecified_at_should_level():
         check_id=CheckId.CARD_SIGNED,
         outcome=Outcome.UNSPECIFIED,
         normative_strength=NormativeStrength.SHOULD,
-        spec_ref="A2A 8.4",
+        spec_ref="A2A 5.5.6",
     )
     assert result.outcome is Outcome.UNSPECIFIED
 
@@ -142,6 +142,15 @@ def test_descriptive_only_set_matches_intent():
         # permitting a deployment-specific alternative, so its absence is not evidence of
         # any authorization-server MUST being violated.
         CheckId.PKCE_DECLARED,
+        # Joined on 5 August 2026. Both were anchored to "A2A §8.4", which is not in the
+        # revision R7 pins: A2A v0.3.0 has no §8.4, no §4.4.7, no reference to RFC 8785, and
+        # no RFC 2119 keyword anywhere about card signatures — `AgentCardSignature` (§5.5.6)
+        # defines a data structure and stops. The fallback, RFC 7515 §5.2, binds the party
+        # validating a JWS rather than the one publishing it, so it cannot convict a
+        # publisher either. C15 stays failable because RFC 7518 §3.3's 2048-bit floor does
+        # bind the signer.
+        CheckId.KEY_RESOLVABLE,
+        CheckId.SIGNATURE_VERIFIES,
     }
 
 
@@ -189,13 +198,23 @@ def test_two_disjoint_funnels_exist():
     assert not (oauth & signed), "a check may not appear in both funnels"
 
 
-def test_no_descriptive_check_is_a_funnel_stage_that_can_fail():
-    """A descriptive-only check may appear in a funnel (CARD_SIGNED does), but it can
-    never produce a failure, so the funnel must not treat its absence as a violation."""
-    for stages in FUNNELS.values():
-        for _, check in stages:
-            if check in DESCRIPTIVE_ONLY:
-                assert check is CheckId.CARD_SIGNED  # the only intentional case
+def test_the_signed_funnel_is_descriptive_except_for_key_strength():
+    """A descriptive-only check may sit in a funnel; it just cannot fail there.
+
+    Until 5 August 2026 CARD_SIGNED was the only such case. C03 and C04 joined it when their
+    anchor turned out to be absent from the pinned A2A revision, which makes the whole
+    signed-document funnel descriptive apart from C15 — and that is the accurate description
+    of a terminated arm reported as prevalence. The OAuth funnel is unaffected and must stay
+    so: every one of its stages can still convict.
+    """
+    descriptive_in_funnels = {
+        check for stages in FUNNELS.values() for _, check in stages if check in DESCRIPTIVE_ONLY
+    }
+    assert descriptive_in_funnels == {
+        CheckId.CARD_SIGNED, CheckId.KEY_RESOLVABLE, CheckId.SIGNATURE_VERIFIES,
+    }
+    oauth_stages = {check for _, check in FUNNELS[Modality.OAUTH_METADATA] if check is not None}
+    assert not (oauth_stages & DESCRIPTIVE_ONLY)
 
 
 def test_every_funnel_starts_with_reachability():

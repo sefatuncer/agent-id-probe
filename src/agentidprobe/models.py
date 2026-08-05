@@ -93,6 +93,14 @@ OUTCOME_PRECEDENCE: tuple[Outcome, ...] = (
 DESCRIPTIVE_ONLY: frozenset[CheckId] = frozenset(
     {
         CheckId.CARD_SIGNED,          # A2A: `signatures` is OPTIONAL for the publisher
+        # Added 5 August 2026. Both were anchored to "A2A 8.4", which does not exist in A2A
+        # v0.3.0 -- the revision R7 pins -- and neither does 4.4.7 or any mention of RFC 8785.
+        # That document carries no RFC 2119 keyword at all about card signatures. The fallback,
+        # RFC 7515 5.2, binds the party validating a signature rather than the publisher, so it
+        # cannot convict one either. See `ANCHOR_STRENGTH` below for the full reasoning
+        # and why C15 is not demoted alongside them.
+        CheckId.KEY_RESOLVABLE,
+        CheckId.SIGNATURE_VERIFIES,
         CheckId.SENDER_CONSTRAINED,   # neither MCP nor RFC 9449 mandates DPoP/mTLS
         CheckId.REVOCATION_DECLARED,  # no spec requires an agent identity to be revocable
         # RFC 9700 (BCP 240) 2.1 makes a mix-up defence REQUIRED, but of the *client*, and
@@ -143,8 +151,18 @@ class BoundParty(StrEnum):
 # into naming a clause the instrument does not cite.
 SPEC_ANCHOR_SUMMARY: dict[CheckId, tuple[str, BoundParty]] = {
     CheckId.IDENTITY_METADATA_PUBLISHED: ("A2A agent discovery", BoundParty.CARD_PUBLISHER),
-    CheckId.CARD_SIGNED: ("A2A §4.4.7", BoundParty.CARD_PUBLISHER),
-    CheckId.KEY_RESOLVABLE: ("A2A §8.4", BoundParty.CARD_PUBLISHER),
+    # §5.5.6, not §4.4.7 and not §8.4, until 5 August 2026. Both of those number a section of
+    # A2A v1.0; neither exists in v0.3.0, the revision R7 pins, where the only text touching
+    # card signatures is §5.5.6 `AgentCardSignature` -- a TypeScript type include and one
+    # descriptive sentence, carrying no RFC 2119 keyword. The old labels read as verified
+    # anchors in the row a reviewer checks first. Anchoring instead to v1.0 was the available
+    # alternative and was rejected: it would mean amending R7 to score deployments against a
+    # revision published after they were measured.
+    CheckId.CARD_SIGNED: ("A2A §5.5.6", BoundParty.CARD_PUBLISHER),
+    CheckId.KEY_RESOLVABLE: ("A2A §5.5.6", BoundParty.CARD_PUBLISHER),
+    # RFC 8785 is this instrument's choice of canonicalisation, not A2A v0.3.0's: that
+    # revision names no canonicalisation scheme at all. It stays in the label because it is
+    # what the payload was built with and a reader reproducing the verdict needs it.
     CheckId.SIGNATURE_VERIFIES: ("RFC 7515 §5.2; RFC 8785", BoundParty.CARD_PUBLISHER),
     CheckId.PRM_PRESENT: ("RFC 9728 §3.2", BoundParty.RESOURCE_SERVER),
     CheckId.WWW_AUTH_RESOURCE_METADATA: ("MCP Authorization, discovery",
@@ -182,6 +200,55 @@ SPEC_ANCHOR_SUMMARY: dict[CheckId, tuple[str, BoundParty]] = {
     CheckId.CLIENT_BOOTSTRAP_DECLARED: ("MCP Authorization, registration",
                                         BoundParty.CLIENT),
     CheckId.PROTECTED_RESOURCES_DECLARED: ("RFC 9728 §4", BoundParty.AUTHORIZATION_SERVER),
+}
+
+# The strength of the specification sentence each signed-document check rests on, independent
+# of which code path emits it. Every emission site reads it here, so that demoting a check
+# cannot leave one branch still announcing the old strength -- the defect that printed
+# "MUST . descriptive only" for C14 in Table 1 on 29 July and for C03/C04 on 5 August, both
+# times from a shared `for cid in (...)` loop that hard-coded MUST for the whole group.
+#
+# It lives in `models` rather than beside the checks so that the catalogue generator can read
+# it without importing the JOSE stack. Putting it in `checks_signed` made `gen_catalogue.py`
+# -- which needs nothing but this metadata -- fail to start without `joserfc` installed.
+#
+# The access-block and no-card loops used to pass MUST for every check they touched, which
+# recorded C01 at both SHOULD and MUST and C02 -- whose anchor is A2A's OPTIONAL `signatures`
+# member, and which is DESCRIPTIVE_ONLY -- at both MAY and MUST. The verdicts on those paths
+# are ERROR or NOT_APPLICABLE, so R1 never fired and nothing was mis-scored. But the generated
+# catalogue reads the strength actually recorded, so the published artefact claimed two anchors
+# for checks that have one, and a later edit turning either loop into a FAIL_* would have been
+# resting on a MUST that does not exist.
+#
+# C03 and C04 were MUST until 5 August 2026, anchored to "A2A 8.4: a signed card MUST be
+# verifiable against a discoverable key". That sentence is in no revision of A2A. The pinned
+# revision, v0.3.0, has no 8.4 and no 4.4.7 at all: 8 is Error Handling and 4 is Authentication
+# and Authorization. `AgentCardSignature` is 5.5.6, and its complete text defines a data
+# structure. **The document contains no MUST, SHOULD or REQUIRED anywhere in connection with
+# card signatures, signing, verification or JWS.** The nearest real sentences are in v1.0,
+# which R7 does not admit. Re-verified against the pinned revision on 5 August 2026.
+#
+# This resolves an item the project carried unexplained for a week: repeated verification
+# rounds recorded that "A2A 8.4 could not be retrieved". It could not be retrieved because it
+# does not exist in the pinned revision, and the fixtures' `verification` fields said so
+# without anyone asking which revision had been searched.
+#
+# The fallback anchor does not reach either. RFC 7515 5.2's "the JWS MUST be considered
+# invalid" binds the party *validating* a signature, and this instrument is not that party --
+# it is a third party observing what a publisher published. A publisher who ships an
+# unverifiable signature has not violated a sentence addressed to them. This is R9.7's
+# distinction between "not creditable" and "forbidden", and the precedent is C14, demoted on
+# 29 July when reading its anchor showed it could convict nobody.
+#
+# C15 is deliberately not demoted with them: RFC 7518 3.3's "A key of size 2048 bits or larger
+# MUST be used with these algorithms" binds the *signer*, is verbatim-verified, and is
+# observable from the published key set.
+ANCHOR_STRENGTH: dict[CheckId, NormativeStrength] = {
+    CheckId.IDENTITY_METADATA_PUBLISHED: NormativeStrength.SHOULD,  # A2A: location, not duty
+    CheckId.CARD_SIGNED: NormativeStrength.MAY,                     # `signatures` is OPTIONAL
+    CheckId.KEY_RESOLVABLE: NormativeStrength.MAY,                  # no publisher-binding MUST
+    CheckId.SIGNATURE_VERIFIES: NormativeStrength.MAY,              # RFC 7515 5.2 binds verifiers
+    CheckId.KEY_STRENGTH: NormativeStrength.MUST,                   # RFC 7518 3.3 binds signers
 }
 
 # Empty, and kept rather than deleted so the guard survives its own success.

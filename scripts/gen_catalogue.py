@@ -47,6 +47,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from agentidprobe.models import (  # noqa: E402
+    ANCHOR_STRENGTH,
     CLIENT_BOUND_BUT_FAILABLE,
     DESCRIPTIVE_ONLY,
     FUNNELS,
@@ -55,6 +56,17 @@ from agentidprobe.models import (  # noqa: E402
     NormativeStrength,
     Outcome,
 )
+
+# Emission sites that pass their strength as `TABLE[check_id]` instead of as a
+# `NormativeStrength` literal, so that one demotion cannot leave a shared loop still
+# announcing the old strength. Reading them needs the table's *value*, not its source text:
+# a purely syntactic reader records no strength at all for such a site, and this table is
+# the only place `checks_signed` states the answer. Without this, demoting C03/C04 on
+# 5 August would have left every one of their sites unresolved and Table 1 would have
+# printed `SILENT` -- a third wrong answer after `MUST` and `MUST . descriptive only`.
+_STRENGTH_TABLES: dict[str, dict[str, str]] = {
+    "ANCHOR_STRENGTH": {cid.name: strength.value for cid, strength in ANCHOR_STRENGTH.items()},
+}
 
 CATALOGUE = ROOT / "docs" / "check-catalogue.md"
 
@@ -193,6 +205,29 @@ def _enum_members(nodes: Iterable[ast.AST], enum_name: str) -> tuple[str, ...]:
     return tuple(found)
 
 
+def _table_strength(
+    nodes: Iterable[ast.AST], check: str, env: dict[str, tuple[str, ...]]
+) -> str:
+    """Strength passed as `SOME_TABLE[cid]`, resolved for the check being emitted.
+
+    The subscript key is read where it is a single literal `CheckId`, so that a site
+    citing one check's strength while emitting another's is reported as the mismatch it
+    is rather than quietly corrected. Where the key is a loop variable standing for
+    several checks, each emitted check looks itself up, which is the whole point of
+    writing the site that way.
+    """
+    for node in nodes:
+        for sub in ast.walk(node):
+            if not (isinstance(sub, ast.Subscript) and isinstance(sub.value, ast.Name)):
+                continue
+            table = _STRENGTH_TABLES.get(sub.value.id)
+            if table is None:
+                continue
+            keys = _checkids(sub.slice, env)
+            return table.get(keys[0] if len(keys) == 1 else check, "")
+    return ""
+
+
 def _string(node: ast.expr | None, constants: dict[str, str]) -> str:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
@@ -217,12 +252,13 @@ def _emissions(path: Path) -> list[Emission]:
             # real site is the caller, which is resolved on its own.
             return
 
-        strength = ""
-        for candidate in [*call.args[1:], *(kw.value for kw in call.keywords)]:
+        candidates = [*call.args[1:], *(kw.value for kw in call.keywords)]
+        literal_strength = ""
+        for candidate in candidates:
             member = _enum_member(candidate, "NormativeStrength")
             if member is not None:
                 resolved = NormativeStrength.__members__.get(member)
-                strength = resolved.value if resolved is not None else member
+                literal_strength = resolved.value if resolved is not None else member
                 break
 
         spec_ref = spec_url = ""
@@ -234,13 +270,13 @@ def _emissions(path: Path) -> list[Emission]:
 
         outcomes = tuple(
             Outcome.__members__[member].value
-            for member in _enum_members(
-                [*call.args[1:], *(kw.value for kw in call.keywords)], "Outcome"
-            )
+            for member in _enum_members(candidates, "Outcome")
             if member in Outcome.__members__
         )
 
         for check in checks:
+            # Per check, because one `for cid in (...)` site may now emit at two strengths.
+            strength = literal_strength or _table_strength(candidates, check, env)
             found.append(
                 Emission(check, path.name, call.lineno, strength, spec_ref, spec_url, outcomes)
             )

@@ -22,11 +22,11 @@
       "verification": "verbatim-verified against rfc-editor.org, 30 July 2026"
     },
     {
-      "source": "A2A",
-      "section": "8.4",
-      "url": "https://a2a-protocol.org/latest/specification/",
-      "quote": "A signed card MUST be verifiable against a discoverable key.",
-      "verification": "as recorded in docs/spec-mapping.md; the publisher-binding half of the signed-document funnel"
+      "source": "A2A v0.3.0",
+      "section": "5.5.6 (AgentCardSignature)",
+      "url": "https://a2a-protocol.org/v0.3.0/specification/",
+      "quote": "AgentCardSignature represents a JWS signature of an AgentCard.",
+      "verification": "REPLACED 5 August 2026. This entry read: section 8.4, quote \"A signed card MUST be verifiable against a discoverable key\", verification \"as recorded in docs/spec-mapping.md\". That sentence appears in no revision of A2A -- it was the project's own paraphrase, promoted to a quotation, cited to a section that does not exist in the pinned revision, and vouched for by pointing at another document in this repository rather than at the specification. It is the exact defect the conformance pack exists to prevent, inside the pack. A2A v0.3.0 has no 8.4 and states no signing duty at all; 5.5.6 defines the data structure and stops. C15 does not rest on this entry in any case: its MUST is RFC 7518 3.3 above, and the C03/C04 expectations below are recorded observations rather than convictions."
     }
   ],
   "endpoint": {

@@ -16,15 +16,32 @@ enforced by machine in `models.py`.
 
 | ID | Check | Spec | Section | Strength | Status |
 |---|---|---|---|---|---|
-| **C01** | Is an identity document served at all | A2A | Agent Discovery | **SHOULD** | ✅ |
-| **C02** | Does the document carry a JWS signature | A2A | §4.4.7 / §8.4 | **MAY** (OPTIONAL for the publisher) | ⚠️ |
-| **C03** | Does `kid`/`jku`/did:web resolve to a key | A2A + RFC 7515 | §8.4 | **MUST** (if a signature is present) | ⚠️ |
-| **C04** | Does the signature actually verify | A2A + RFC 7515 + RFC 8785 | §8.4 | **MUST** (if a signature is present) | ⚠️ |
+| **C01** | Is an identity document served at all | A2A v0.3.0 | Agent Discovery | **SHOULD** | ✅ |
+| **C02** | Does the document carry a JWS signature | A2A v0.3.0 | §5.5.6 | **MAY** → descriptive only | ✅ |
+| **C03** | Does `kid`/`jku`/did:web resolve to a key | *(no publisher-binding clause)* | — | **descriptive only** | ✅ |
+| **C04** | Does the signature actually verify | *(no publisher-binding clause)* | — | **descriptive only** | ✅ |
 
-**⚠️ Why these were downgraded (28 July 2026).** The ✅ marks on C02/C03/C04 had been set
-**without verbatim verification** of the quoted sentences from a2a-protocol.org §8.4; in an
-independent confirmation round the page truncates §8.4 and the sentences could not be
-verified. The mark stays ⚠️ until it is earned.
+**✅ Resolved 5 August 2026, and the answer was not the expected one.** From 28 July these
+three rows carried ⚠️ because *"in an independent confirmation round the page truncates §8.4
+and the sentences could not be verified"*. The reason it could not be verified is that
+**A2A v0.3.0 — the revision decision rule R7 pins — has no §8.4.** It has no §4.4.7 either,
+no reference to RFC 8785, and **no RFC 2119 keyword anywhere in connection with card
+signatures, signing, verification or JWS.** §8 is Error Handling (8.1–8.2) and §4 is
+Authentication and Authorization (4.1–4.6). `AgentCardSignature` is **§5.5.6**, whose complete
+text defines a data structure and stops. Those anchors exist in **v1.0**, which R7 does not
+admit; `checks_signed.py` was resolving `SPEC_A2A` through `/latest/`, which now serves v1.0,
+so every stored verdict pointed at a document this study does not score.
+
+**Consequence: C03 and C04 cannot convict anybody, and are now `DESCRIPTIVE_ONLY`.** The
+fallback anchor does not reach either — RFC 7515 §5.2's *"the JWS MUST be considered invalid"*
+binds the party **validating** a signature, and this instrument is a third party observing what
+a publisher published. The precedent is C14 (29 July): reading the anchor showed it could
+convict nobody. **C15 is deliberately not demoted with them**, because RFC 7518 §3.3's
+*"A key of size 2048 bits or larger MUST be used with these algorithms"* binds the signer, is
+verbatim-verified, and is observable from the published key set.
+
+The R8 coverage set shrank from seven checks to five without being edited, because
+`gen_catalogue.py:must_level_failable_checks()` derives it from the abstract syntax tree.
 
 **In measurement terms this is a cheap problem and should be resolved as one:** the signed-card
 population was **1** in the pilot, and **~10 (95% CI [2, 58])** is expected in the full corpus.
@@ -34,7 +51,8 @@ The quotation-verification burden thereby falls to C01, which is already ✅.
 
 **C01 — the location is normative, publishing is not mandatory.**
 > *"The standard path is `https://{agent-server-domain}/.well-known/agent-card.json`"*
-> — [A2A Agent Discovery](https://a2a-protocol.org/latest/topics/agent-discovery/)
+> — [A2A Agent Discovery, v0.3.0](https://a2a-protocol.org/v0.3.0/topics/agent-discovery/)
+> (verbatim-verified against the pinned revision, 5 August 2026)
 
 Not serving a card is not a violation → a C01 failure is `UNSPECIFIED`, not `FAIL_*`.
 
@@ -50,21 +68,35 @@ are counted as absent**, which is in Limitations rather than here. Two frozen do
 disagreeing about what the instrument does is the defect this project has hit most often, and
 `ETHICS.md` is the one that binds.
 
-**C02 — the obligation is on the verifier, not the publisher.**
-> *"Verifiers **SHOULD** verify at least one signature before trusting an Agent Card."*
-> — [A2A Specification §8.4](https://a2a-protocol.org/latest/specification/)
+**C02 — the pinned revision states no obligation at all, in either direction.**
+> *"`AgentCardSignature` … represents a JWS signature of an `AgentCard`."*
+> — [A2A v0.3.0 §5.5.6](https://a2a-protocol.org/v0.3.0/specification/), whose complete text
+> on the subject is a TypeScript type include and one descriptive sentence.
 
-The `signatures` field is **OPTIONAL**. Counting an unsigned card as a "failure" would be the
-authors' own rubric. → `DESCRIPTIVE_ONLY`. It is reported as prevalence (**1** of 25 cards in
-the pilot was signed) and cannot penalise as a funnel stage.
+The `signatures` field is **OPTIONAL** and v0.3.0 carries no RFC 2119 keyword about signing.
+Counting an unsigned card as a "failure" would be the authors' own rubric. → `DESCRIPTIVE_ONLY`.
+It is reported as prevalence (**1** of 25 cards in the pilot was signed) and cannot penalise as
+a funnel stage.
 
-**C04 — canonicalisation ambiguity triggers R6.**
-> *"the Agent Card content **MUST** be canonicalized using the JSON Canonicalization Scheme
-> (JCS) as defined in RFC 8785"* — A2A §8.4. The `signatures` field and fields carrying
-> default values **MUST** be excluded from the signed payload.
+**⚠️ Corrected 5 August 2026.** This entry quoted *"Verifiers **SHOULD** verify at least one
+signature before trusting an Agent Card"* and attributed it to "A2A Specification §8.4" at the
+`/latest/` URL. The sentence is real but belongs to **v1.0 §8.4.3**, which R7 does not admit,
+and it names **Clients**, not "Verifiers". In a study whose whole method turns on which party a
+clause binds, silently renaming the bound party is the wrong error to make. The conclusion is
+unchanged — both words denote the non-publisher side — but the citation was not checkable.
 
-Excluding fields that carry default values is ambiguous in practice → under R6, mismatches in
-this class are automatically `UNSPECIFIED`, not `FAIL_MISIMPLEMENTED`.
+**C04 — the canonicalisation is ours, and R6 governs its ambiguity.**
+The instrument builds the signed payload with **RFC 8785 (JCS)**. This is a decision by these
+authors, not a requirement of the pinned revision: **A2A v0.3.0 never mentions RFC 8785 or any
+canonicalisation scheme**, so a card whose publisher canonicalised differently is not thereby
+non-conforming. Excluding fields that carry default values is ambiguous in practice → under R6,
+mismatches in this class are automatically `UNSPECIFIED`, not `FAIL_MISIMPLEMENTED`.
+
+**⚠️ Corrected 5 August 2026.** This entry block-quoted *"the Agent Card content **MUST** be
+canonicalized using the JSON Canonicalization Scheme (JCS) as defined in RFC 8785"* and
+attributed it to "A2A §8.4". The sentence is verbatim-exact — in **v1.0 §8.4.1**. Presenting a
+v1.0 MUST as the anchor of a check scored against v0.3.0 is how a study convicts a deployment
+of breaking a rule published after it was measured.
 
 **⚠️ A verified gap (the paper's normative contribution):** the A2A specification contains
 **no normative statement about a signed card's freshness, its `exp`/`nbf`, or key revocation.**

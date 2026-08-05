@@ -144,7 +144,15 @@ async def test_signature_survives_key_reordering_of_the_card():
 
 
 @respx.mock
-async def test_tampered_signature_is_a_must_violation():
+async def test_a_tampered_signature_is_recorded_without_convicting_the_publisher():
+    """Demoted from FAIL_MISIMPLEMENTED on 5 August 2026 with the rest of C04.
+
+    The observation is unchanged and just as informative -- a published signature that does
+    not verify over the canonical payload is a striking thing to find. What changed is that
+    no sentence in the pinned revision set binds the publisher to have got it right: A2A
+    v0.3.0 carries no RFC 2119 keyword about card signatures at all, and RFC 7515 5.2's
+    "the JWS MUST be considered invalid" addresses the verifier, which we are not.
+    """
     key = ECKey.generate_key("P-256")
     card = _card()
     card["signatures"] = [_sign_card(card, key, tamper=True)]
@@ -156,7 +164,7 @@ async def test_tampered_signature_is_a_must_violation():
     async with Fetcher(FAST) as f:
         checks, _ = await probe_signed(f, CARD_URL, _fetched(card))
     assert _outcome(checks, CheckId.KEY_RESOLVABLE) is Outcome.PASS
-    assert _outcome(checks, CheckId.SIGNATURE_VERIFIES) is Outcome.FAIL_MISIMPLEMENTED
+    assert _outcome(checks, CheckId.SIGNATURE_VERIFIES) is Outcome.UNSPECIFIED
 
 
 @respx.mock
@@ -173,7 +181,7 @@ async def test_modified_card_body_breaks_the_signature():
 
     async with Fetcher(FAST) as f:
         checks, _ = await probe_signed(f, CARD_URL, _fetched(card))
-    assert _outcome(checks, CheckId.SIGNATURE_VERIFIES) is Outcome.FAIL_MISIMPLEMENTED
+    assert _outcome(checks, CheckId.SIGNATURE_VERIFIES) is Outcome.UNSPECIFIED
 
 
 # --- unsigned and unreachable cases -------------------------------------------
@@ -205,7 +213,7 @@ async def test_unreachable_key_does_not_convict_the_signature():
 
     async with Fetcher(FAST) as f:
         checks, _ = await probe_signed(f, CARD_URL, _fetched(card))
-    assert _outcome(checks, CheckId.KEY_RESOLVABLE) is Outcome.FAIL_UNIMPLEMENTED
+    assert _outcome(checks, CheckId.KEY_RESOLVABLE) is Outcome.UNSPECIFIED
     assert _outcome(checks, CheckId.SIGNATURE_VERIFIES) is Outcome.NOT_APPLICABLE
 
 

@@ -30,10 +30,15 @@ from joserfc.jws import JWSRegistry
 
 from .fetcher import ErrorKind, Fetcher, FetchResult
 from .jcs import AmbiguousNumberError, JcsError, canonicalize
-from .models import CheckId, CheckResult, NormativeStrength, Outcome
+from .models import ANCHOR_STRENGTH, CheckId, CheckResult, NormativeStrength, Outcome
 
-SPEC_A2A = "https://a2a-protocol.org/latest/specification/"
-SPEC_A2A_DISCOVERY = "https://a2a-protocol.org/latest/topics/agent-discovery/"
+# Pinned to the revision R7 scores against, not to `/latest/`. `/latest/` now serves A2A v1.0,
+# so every stored C01-C04 verdict was recording a spec_url for a document this study does not
+# score -- the identical defect fixed for SPEC_MCP on 29 July 2026, missed here because the
+# signed arm was already terminated and nobody re-read it. `/v0.3/` is a 404; the patch
+# component is required.
+SPEC_A2A = "https://a2a-protocol.org/v0.3.0/specification/"
+SPEC_A2A_DISCOVERY = "https://a2a-protocol.org/v0.3.0/topics/agent-discovery/"
 SPEC_RFC7515 = "https://www.rfc-editor.org/rfc/rfc7515.html"
 # C04 is the only check here whose MUST comes from a specific clause rather than the document
 # as a whole, so it deep-links: 5.2 "Message Signature or MAC Validation" is where "at least
@@ -138,24 +143,6 @@ class SignedEvidence:
             "verified_count": self.verified_count,
             "canonicalization_note": self.canonicalization_note,
         }
-
-
-# The strength of the specification sentence each check rests on, independent of which
-# code path emits it. The access-block and no-card loops used to pass MUST for every check
-# they touched, which recorded C01 at both SHOULD and MUST and C02 -- whose anchor is A2A's
-# OPTIONAL `signatures` member, and which is DESCRIPTIVE_ONLY -- at both MAY and MUST. The
-# verdicts on those paths are ERROR or NOT_APPLICABLE, so R1 never fired and nothing was
-# mis-scored. But the generated check catalogue reads the strength that was actually
-# recorded, so the published artefact claimed two anchors for checks that have one, and a
-# later edit turning either loop into a FAIL_* would have been resting on a MUST that does
-# not exist.
-ANCHOR_STRENGTH: dict[CheckId, NormativeStrength] = {
-    CheckId.IDENTITY_METADATA_PUBLISHED: NormativeStrength.SHOULD,  # A2A: location, not duty
-    CheckId.CARD_SIGNED: NormativeStrength.MAY,                     # `signatures` is OPTIONAL
-    CheckId.KEY_RESOLVABLE: NormativeStrength.MUST,                 # RFC 7515, if signed
-    CheckId.SIGNATURE_VERIFIES: NormativeStrength.MUST,             # RFC 7515, if signed
-    CheckId.KEY_STRENGTH: NormativeStrength.MUST,                   # RFC 7518 / BCP 195
-}
 
 
 def _decode_protected(sig: dict) -> dict | None:
@@ -328,13 +315,19 @@ async def probe_signed(
     add(CheckId.CARD_SIGNED,
         Outcome.PASS if ev.signatures else Outcome.UNSPECIFIED,
         NormativeStrength.MAY,
-        spec_ref="A2A 4.4.7: `signatures` is OPTIONAL; verifiers SHOULD verify one",
+        spec_ref="A2A 5.5.6: AgentCardSignature is a data structure; publishing one is "
+                 "optional and the revision states no duty to",
         spec_url=SPEC_A2A,
         observed_value=f"{len(ev.signatures)} signature(s)")
 
     if not ev.signatures:
+        # Per check, not one strength for the group. A shared loop that hard-codes MUST
+        # outlives the demotion of any check inside it: C14 was demoted on 29 July and kept
+        # emitting MUST from exactly such a loop, which printed "MUST . descriptive only" in
+        # Table 1, and C03/C04 did the same here until 5 August. `ANCHOR_STRENGTH` is the one
+        # place that answers this question, so the loops ask it.
         for cid in (CheckId.KEY_RESOLVABLE, CheckId.SIGNATURE_VERIFIES, CheckId.KEY_STRENGTH):
-            add(cid, Outcome.NOT_APPLICABLE, NormativeStrength.MUST,
+            add(cid, Outcome.NOT_APPLICABLE, ANCHOR_STRENGTH[cid],
                 detail="card carries no signature")
         return checks, ev
 
@@ -344,18 +337,21 @@ async def probe_signed(
     except AmbiguousNumberError as exc:
         ev.canonicalization_note = str(exc)
         for cid in (CheckId.KEY_RESOLVABLE, CheckId.SIGNATURE_VERIFIES):
-            add(cid, Outcome.UNSPECIFIED, NormativeStrength.MUST,
+            add(cid, Outcome.UNSPECIFIED, ANCHOR_STRENGTH[cid],
                 spec_ref="RFC 8785 number formatting", spec_url=SPEC_RFC8785,
                 detail=f"canonicalization ambiguous (R6): {exc}")
         add(CheckId.KEY_STRENGTH, Outcome.NOT_APPLICABLE, NormativeStrength.MUST)
         return checks, ev
     except JcsError as exc:
         ev.canonicalization_note = str(exc)
-        add(CheckId.KEY_RESOLVABLE, Outcome.FAIL_MISIMPLEMENTED, NormativeStrength.MUST,
+        # Recorded, not charged: RFC 8785 is not referenced anywhere in A2A v0.3.0, so there
+        # is no sentence binding a card publisher to publish canonicalizable JSON.
+        add(CheckId.KEY_RESOLVABLE, Outcome.UNSPECIFIED, ANCHOR_STRENGTH[CheckId.KEY_RESOLVABLE],
             spec_ref="RFC 8785", spec_url=SPEC_RFC8785,
             detail=f"card is not canonicalizable JSON: {exc}")
-        for cid in (CheckId.SIGNATURE_VERIFIES, CheckId.KEY_STRENGTH):
-            add(cid, Outcome.NOT_APPLICABLE, NormativeStrength.MUST)
+        add(CheckId.SIGNATURE_VERIFIES, Outcome.NOT_APPLICABLE,
+            ANCHOR_STRENGTH[CheckId.SIGNATURE_VERIFIES])
+        add(CheckId.KEY_STRENGTH, Outcome.NOT_APPLICABLE, NormativeStrength.MUST)
         return checks, ev
 
     payload_b64 = _b64url(payload)
@@ -423,15 +419,23 @@ async def probe_signed(
 
     # C03
     if resolved_any:
-        add(CheckId.KEY_RESOLVABLE, Outcome.PASS, NormativeStrength.MUST,
-            spec_ref="A2A 8.4 key discovery", spec_url=SPEC_A2A,
+        add(CheckId.KEY_RESOLVABLE, Outcome.PASS, ANCHOR_STRENGTH[CheckId.KEY_RESOLVABLE],
+            spec_ref="A2A 5.5.6: key located from the signature's own `jku`/`kid`/did:web, "
+                     "the revision naming no discovery duty",
+            spec_url=SPEC_A2A,
             observed_value="; ".join(ev.key_sources))
     elif any(e == "blocked" for e in key_errors):
-        add(CheckId.KEY_RESOLVABLE, Outcome.ERROR, NormativeStrength.MUST,
+        add(CheckId.KEY_RESOLVABLE, Outcome.ERROR, ANCHOR_STRENGTH[CheckId.KEY_RESOLVABLE],
             detail="key location blocked (R4)")
     else:
-        add(CheckId.KEY_RESOLVABLE, Outcome.FAIL_UNIMPLEMENTED, NormativeStrength.MUST,
-            spec_ref="A2A 8.4: a signed card MUST be verifiable against a discoverable key",
+        # No key could be resolved. Recorded, never charged: the sentence this branch used to
+        # cite, "A2A 8.4: a signed card MUST be verifiable against a discoverable key", is not
+        # in A2A v0.3.0 -- see ANCHOR_STRENGTH. Nothing in the pinned revision obliges a
+        # publisher to make the key reachable, so the absence is a property of the deployment
+        # we report rather than a violation we allege.
+        add(CheckId.KEY_RESOLVABLE, Outcome.UNSPECIFIED, ANCHOR_STRENGTH[CheckId.KEY_RESOLVABLE],
+            spec_ref="A2A v0.3.0 defines AgentCardSignature (5.5.6) without obliging the "
+                     "publisher to make the verification key discoverable",
             spec_url=SPEC_A2A, observed_value="; ".join(key_errors))
 
     # C04 - the headline. A signature that does not verify is a MUST violation of
@@ -445,17 +449,20 @@ async def probe_signed(
     # at least one JWS Signature value MUST successfully validate, or the JWS MUST be
     # considered invalid" -- so it is the one both must name.
     if verified_any:
-        add(CheckId.SIGNATURE_VERIFIES, Outcome.PASS, NormativeStrength.MUST,
-            spec_ref="RFC 7515 5.2 + A2A 8.4 (JCS payload)",
+        add(CheckId.SIGNATURE_VERIFIES, Outcome.PASS, ANCHOR_STRENGTH[CheckId.SIGNATURE_VERIFIES],
+            spec_ref="RFC 7515 5.2 over the RFC 8785 canonical payload, canonicalisation "
+                     "being this instrument's choice and not A2A v0.3.0's",
             spec_url=SPEC_RFC7515_VALIDATION,
             observed_value=f"{ev.verified_count}/{len(ev.signatures)} verified")
     elif not resolved_any:
-        add(CheckId.SIGNATURE_VERIFIES, Outcome.NOT_APPLICABLE, NormativeStrength.MUST,
+        add(CheckId.SIGNATURE_VERIFIES, Outcome.NOT_APPLICABLE,
+            ANCHOR_STRENGTH[CheckId.SIGNATURE_VERIFIES],
             detail="no key could be resolved, so the signature cannot be judged")
     elif not attempted_and_failed and skipped_not_creditable:
         # Every signature on this card was skipped rather than tested, so there is no
         # observation of a verification failure to report (R6).
-        add(CheckId.SIGNATURE_VERIFIES, Outcome.UNSPECIFIED, NormativeStrength.MUST,
+        add(CheckId.SIGNATURE_VERIFIES, Outcome.UNSPECIFIED,
+            ANCHOR_STRENGTH[CheckId.SIGNATURE_VERIFIES],
             spec_ref="RFC 7515 5.2; verification not attempted, so no failure was observed",
             spec_url=SPEC_RFC7515_VALIDATION,
             observed_value="; ".join(skipped_not_creditable),
@@ -463,14 +470,23 @@ async def probe_signed(
                    "as a cryptographic binding, which is our decision about what may count "
                    "and not an observation about whether the signature is well formed")
     else:
-        add(CheckId.SIGNATURE_VERIFIES, Outcome.FAIL_MISIMPLEMENTED, NormativeStrength.MUST,
-            # A2A 8.4 is the publisher-binding half and belongs here rather than only on the
-            # PASS branch: RFC 7515 5.2's MUSTs tell a *verifier* to reject an invalid JWS,
-            # and the objection that demoted two thirds of C15 would apply to this branch
-            # too if the only citation were 5.2. A2A binds whoever published the card.
-            spec_ref="A2A 8.4: a signed card MUST be verifiable against a discoverable key; "
-                     "RFC 7515 5.2: at least one JWS Signature value MUST successfully "
-                     "validate, or the JWS MUST be considered invalid",
+        # A signature that does not verify, recorded and not charged.
+        #
+        # This branch was `FAIL_MISIMPLEMENTED` at MUST until 5 August 2026, and the comment
+        # that justified it said "A2A 8.4 is the publisher-binding half" -- correctly
+        # identifying that RFC 7515 5.2 binds a *verifier* and that 5.2 alone could not carry
+        # the accusation. It then leaned on a sentence that does not exist in the revision R7
+        # pins. With A2A v0.3.0 supplying no publisher-binding keyword at all, the objection
+        # the comment anticipated is the one that lands: we are a third party observing what
+        # somebody published, not the verifier 5.2 addresses.
+        #
+        # The observation is unchanged and is exactly as informative -- a published signature
+        # that does not verify over the canonical payload is a striking thing to find. What
+        # changes is that the paper reports it instead of alleging it.
+        add(CheckId.SIGNATURE_VERIFIES, Outcome.UNSPECIFIED,
+            ANCHOR_STRENGTH[CheckId.SIGNATURE_VERIFIES],
+            spec_ref="RFC 7515 5.2 binds the party validating a JWS, not the party publishing "
+                     "one; A2A v0.3.0 states no signature obligation for the publisher",
             spec_url=SPEC_RFC7515_VALIDATION,
             observed_value=f"{attempted_and_failed} of {len(ev.signatures)} signature(s) "
                            f"tested and none verified",
