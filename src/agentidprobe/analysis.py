@@ -382,10 +382,15 @@ class DelegationGraph:
         agent web, not a defect of any operator — which is exactly why it can be reported
         without accusing anybody.
         """
+        # top-10 as well as 1, 3 and 5, because the results section asks for it by name and
+        # nothing computed it. A promised quantity with no producer is the same defect as a
+        # check with no code path: the draft reads as though the number exists, and the gap
+        # only surfaces when somebody tries to print it. Found on 5 August 2026 while wiring
+        # the manuscript's markers to the run, which is the first time anything had.
         total = sum(self.issuer_counts.values())
         if total == 0:
-            return {"issuers": 0, "hhi": None, "top1_share": None,
-                    "top3_share": None, "top5_share": None, "effective_issuers": None}
+            return {"issuers": 0, "hhi": None, "top1_share": None, "top3_share": None,
+                    "top5_share": None, "top10_share": None, "effective_issuers": None}
         shares = sorted((c / total for c in self.issuer_counts.values()), reverse=True)
         hhi = sum(s * s for s in shares)
         return {
@@ -394,6 +399,7 @@ class DelegationGraph:
             "top1_share": sum(shares[:1]),
             "top3_share": sum(shares[:3]),
             "top5_share": sum(shares[:5]),
+            "top10_share": sum(shares[:10]),
             "effective_issuers": 1.0 / hhi if hhi > 0 else None,
         }
 
