@@ -100,7 +100,12 @@ Orijinal çerçeve ("ajan kimliğinin doğrulanabilirliğinin internet ölçeği
 
 ## 5. Alet düzeltmeleri (Reviewer A — veri toplamadan ÖNCE zorunlu)
 
-**Yazarların rubriği olarak saldırıya açık 4 kontrol:** C02 (A2A'da `signatures` OPTIONAL), C08 (DPoP/mTLS zorunlu değil), C09 (hiçbir spec status list istemiyor), C10 ("organisational trust root" hiçbir spec'te tanımlı değil). → Huniden çıkarılacak veya UNSPECIFIED bulgusu olarak raporlanacak.
+**Yazarların rubriği olarak saldırıya açık 4 kontrol:** C02 (A2A'da `signatures` OPTIONAL), C08 (DPoP/mTLS zorunlu değil), C09 (hiçbir spec status list istemiyor), C10 ("organisational trust root" hiçbir spec'te tanımlı değil; **C10 sonradan tamamen silindi**). → Huniden çıkarılacak veya UNSPECIFIED bulgusu olarak raporlanacak.
+
+> **Sonradan ne oldu (28 Temmuz 2026):** Bu dört kontrolün üçü betimsel oldu, **C10 ise tamamen
+> silindi** — bağlanacak bir spec cümlesi yoktu ve bir tanesini kendimiz tanımlamak, bu tasarımın
+> imkânsız kılmak için var olduğu şeyin ta kendisi olurdu. Bu belge pilotun tarihli kaydıdır ve
+> geriye dönük düzeltilmez; enstrümanın güncel hâli için `check-catalogue.md` tek kaynaktır.
 
 **Eklenecek kontroller:**
 | ID | Kontrol | Spec çıpası |
@@ -115,7 +120,9 @@ Orijinal çerçeve ("ajan kimliğinin doğrulanabilirliğinin internet ölçeği
 
 **C07 ölçülemez:** RFC 8707 yükümlülüğü *istemcidedir*; pasif prob göremez. C12'ye çevrildi.
 
-**Huni ikiye ayrılacak:** Huni-M (MCP: reachable → C05 → C12 → C13 → C06/C14) ve Huni-A (A2A/did:web: reachable → C01 → C02 → C03 → C04). Tek huni, OAuth-only kimlik kullanan meşru bir ucu spec'in hiç istemediği bir kademede eliyor → şelalenin büyük kısmı başarısızlık değil **kompozisyon** olurdu.
+**Huni ikiye ayrılacak:** Huni-M (MCP: reachable → C05 → C12 → C13 → C06/C14 — *C06 28 Temmuz'da
+silindi, C14 29 Temmuz'da betimsel olup huniden çıktı, yani bu huni bugün C13'te bitiyor*) ve
+Huni-A (A2A/did:web: reachable → C01 → C02 → C03 → C04). Tek huni, OAuth-only kimlik kullanan meşru bir ucu spec'in hiç istemediği bir kademede eliyor → şelalenin büyük kısmı başarısızlık değil **kompozisyon** olurdu.
 
 ---
 

@@ -100,8 +100,15 @@ of breaking a rule published after it was measured.
 
 **⚠️ A verified gap (the paper's normative contribution):** the A2A specification contains
 **no normative statement about a signed card's freshness, its `exp`/`nbf`, or key revocation.**
-This is the source of why C09 and C10 count as opinion, and it is the cleanest example in the
-`UNSPECIFIED` catalogue.
+This is why C09 is descriptive-only, and why **C10 was deleted outright on 28 July 2026**: a
+check about card freshness had no sentence anywhere to anchor to, and a check with no anchor
+is a rubric. It is the cleanest example in the `UNSPECIFIED` catalogue.
+
+**⚠️ Corrected 5 August 2026.** This paragraph read *"why C09 and C10 count as opinion"*,
+naming a check deleted from the instrument eight days earlier. It is the fourth surviving
+reference to a removed check found in this project, after the R1 consequence list, the paper's
+Table 1 and the README's check table, and the first in a document a reviewer opens to audit the
+anchors themselves.
 
 ---
 
