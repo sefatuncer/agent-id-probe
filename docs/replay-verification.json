@@ -1,0 +1,32 @@
+{
+  "generated_by": "scripts/verify_replay.py",
+  "rule": "R8 leg 2: every verdict recomputed from stored bytes, no network",
+  "runs": [
+    {
+      "run_id": "census1",
+      "reports_in": 16578,
+      "reports_out": 16578,
+      "verdicts_changed": 0,
+      "endpoints_not_replayable": 0,
+      "identical": true,
+      "differences": []
+    },
+    {
+      "run_id": "census2",
+      "reports_in": 16578,
+      "reports_out": 16577,
+      "verdicts_changed": 0,
+      "endpoints_not_replayable": 1,
+      "identical": false,
+      "differences": [
+        "a3bbfa644b5df31f [oauth_metadata]: present in the stored run, absent after replay"
+      ]
+    }
+  ],
+  "totals": {
+    "reports": 33156,
+    "verdicts_changed": 0,
+    "endpoints_not_replayable": 1,
+    "reports_reproduced": 33155
+  }
+}

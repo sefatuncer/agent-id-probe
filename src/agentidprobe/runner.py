@@ -441,12 +441,28 @@ async def rescore(
             print(f"  ! {endpoint.url}: no stored response, skipped")
             continue
 
-        if report.modality is Modality.OAUTH_METADATA:
-            checks, evidence = await probe_oauth(fetcher, endpoint.url, initial)
-            record = evidence.as_record(initial.headers.get("server"))
-        else:
-            checks, evidence = await probe_signed(fetcher, endpoint.url, initial)
-            record = evidence.as_record()
+        # A gap in a *downstream* fetch used to propagate out of here and end the whole
+        # re-score, so one endpoint out of 8,896 turned `rescore --verify` into a traceback
+        # and the other 16,577 verdicts were never checked at all. On census2 exactly one
+        # endpoint does this: the live run stopped at the path-suffixed metadata candidate,
+        # and the replay walks one candidate further to the root form, which was therefore
+        # never stored.
+        #
+        # Skipping the endpoint rather than inventing a verdict is the same choice the
+        # branch above already makes, and it does not weaken R8: `compare_reports` reports a
+        # missing endpoint as "present in the stored run, absent after replay", so the gap
+        # still fails `--verify`. What changes is that it fails with a readable difference
+        # instead of a stack trace, and the endpoints that do replay are actually compared.
+        try:
+            if report.modality is Modality.OAUTH_METADATA:
+                checks, evidence = await probe_oauth(fetcher, endpoint.url, initial)
+                record = evidence.as_record(initial.headers.get("server"))
+            else:
+                checks, evidence = await probe_signed(fetcher, endpoint.url, initial)
+                record = evidence.as_record()
+        except ArtefactMissing as exc:
+            print(f"  ! {endpoint.url}: replay gap, skipped ({exc})")
+            continue
 
         rescored = _report_from(
             endpoint, report.modality, initial, checks, destination.run_id, evidence=record,
