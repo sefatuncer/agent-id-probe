@@ -1,0 +1,12 @@
+{
+  "name": "mcp-client-bench",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Drives published MCP client SDKs against a loopback resource server to record which specification checks they perform.",
+  "scripts": { "bench": "node bench.mjs" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/client": "2.0.0"
+  }
+}

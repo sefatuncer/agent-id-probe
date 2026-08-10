@@ -38,3 +38,7 @@ data/raw/example-rescored/
 .coverage
 htmlcov/
 
+
+# Client bench dependencies. The lockfile is committed and pins the versions every result
+# record carries, so the tree is reproducible without shipping 95 packages.
+client-bench/node_modules/
