@@ -17,6 +17,7 @@ from agentidprobe.analysis import (
     cluster_robust_proportion,
     issuer_documents,
     issuer_rate,
+    manski_bounds,
     passes_variance_test,
     select_headline,
     student_t_cdf,
@@ -590,3 +591,37 @@ def test_the_withheld_ledger_names_which_of_our_rules_cost_what():
     assert ledger["excluded_from_denominators"] == 3
     assert ledger["by_reason"]["beyond the 10-issuer per-endpoint request cap"] == 2
     assert ledger["by_reason"]["host 'as3.test' has no registrable domain"] == 1
+
+
+# --- Manski worst-case bounds -------------------------------------------------
+
+
+def test_manski_bounds_width_equals_the_unobserved_fraction():
+    """The identified set is exactly as wide as our ignorance, whatever the rate is.
+
+    This is the property that makes the bound worth printing beside a cluster-robust
+    interval: it does not narrow as the corpus grows, so where it is the wider of the two
+    the paper is limited by who would answer rather than by how many were asked.
+    """
+    for p_hat in (0.0, 0.062, 0.5, 0.93, 1.0):
+        low, high = manski_bounds(p_hat, unobserved=130, observed=870)
+        assert math.isclose(high - low, 0.13, abs_tol=1e-9)
+
+
+def test_manski_bounds_collapse_to_the_point_estimate_when_nothing_is_unobserved():
+    """With full observation there is nothing to bound, and the set is the estimate."""
+    low, high = manski_bounds(0.42, unobserved=0, observed=500)
+    assert math.isclose(low, 0.42) and math.isclose(high, 0.42)
+
+
+def test_manski_bounds_stay_inside_the_unit_interval():
+    """A rate near 1 with a large unobserved share must not report an upper bound above 1,
+    which is where the arithmetic would otherwise put it."""
+    low, high = manski_bounds(0.98, unobserved=300, observed=700)
+    assert 0.0 <= low <= high <= 1.0
+
+
+def test_manski_bounds_are_defined_on_an_empty_population():
+    """Called on a check nothing was applicable to, it returns a point rather than raising:
+    an empty denominator is a reporting decision elsewhere, not an arithmetic error here."""
+    assert manski_bounds(0.0, unobserved=0, observed=0) == (0.0, 0.0)

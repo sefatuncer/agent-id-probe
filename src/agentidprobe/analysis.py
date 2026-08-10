@@ -302,9 +302,22 @@ def _collapse_to_one_per(reports: list, unit: str) -> list:
 def rate_by_unit(reports: list, check_id, unit: str, conf: float = 0.95) -> ProportionEstimate:
     """One check's pass rate with `unit` as the unit of analysis.
 
-    The denominator follows the funnel rules rather than counting every report: an endpoint
-    the check does not apply to (NOT_APPLICABLE) or could not be observed on (ERROR) leaves,
-    because carrying it would count composition and access blocks as non-conformance.
+    The denominator follows the funnel rules rather than counting every report. Four
+    populations leave it, and all four left the funnel's denominator already; until 6 August
+    2026 only the first two left this one, so the two tables the manuscript prints side by
+    side were computed under different rules and disagreed by 21 endpoints on C05, 196 on C12
+    and 717 on C13. Two external reviews read that disagreement as the study contradicting
+    itself, which is the correct reading of it.
+
+    An endpoint the check does not apply to (NOT_APPLICABLE) leaves, because carrying it
+    counts composition as non-conformance. One that could not be observed (ERROR) leaves,
+    because an access block is not a conformance observation. One the access policy declined
+    to ask -- excluded by robots.txt, by the opt-out list, or because a redirect carried the
+    request to another origin -- leaves, because retaining it publishes our own politeness
+    policy as a property of the ecosystem. And UNSPECIFIED leaves, because the outcome
+    records the instrument declining to score, and Section 4.3 undertakes that instrument
+    uncertainty is not scored against an operator; a denominator that keeps it does exactly
+    that. What keeping it would cost is not hidden: the C12 sensitivity pair puts it back.
 
     For the endpoint unit every endpoint is an observation and the interval is clustered by
     apex, so the point estimate is the raw rate while the interval knows the endpoints are
@@ -316,8 +329,9 @@ def rate_by_unit(reports: list, check_id, unit: str, conf: float = 0.95) -> Prop
 
     applicable = [
         r for r in reports
-        if (o := r.outcome_of(check_id)) is not None
-        and o not in (Outcome.NOT_APPLICABLE, Outcome.ERROR)
+        if r.robots_allowed and not r.opted_out and not r.crossed_origin()
+        and (o := r.outcome_of(check_id)) is not None
+        and o not in (Outcome.NOT_APPLICABLE, Outcome.ERROR, Outcome.UNSPECIFIED)
     ]
     if unit == "endpoint":
         population, cluster_by = applicable, "apex"
@@ -575,8 +589,8 @@ def passes_variance_test(estimate: ProportionEstimate) -> VarianceTest:
             False, f"{estimate.p_hat:.1%} [{estimate.lo:.3f}, {estimate.hi:.3f}] is at or "
                    f"above {VARIANCE_CEILING:.0%}: essentially everybody", estimate)
     return VarianceTest(
-        True, f"{estimate.p_hat:.1%} [{estimate.lo:.3f}, {estimate.hi:.3f}] shows variance "
-              f"at publishable precision (+/-{half_width:.1%}, m={estimate.m})", estimate)
+        True, f"{estimate.p_hat:.1%} [{estimate.lo:.3f}, {estimate.hi:.3f}] is informative at "
+              f"publishable precision (+/-{half_width:.1%}, m={estimate.m})", estimate)
 
 
 def select_headline(candidates: list[tuple[str, ProportionEstimate]]) -> tuple[str, str]:
@@ -590,9 +604,9 @@ def select_headline(candidates: list[tuple[str, ProportionEstimate]]) -> tuple[s
         if verdict.passed:
             return name, verdict.reason
     return (
-        "ecosystem topology (R11.2 fallback)",
-        "no rate candidate showed variance; the topology result is not a rate and is "
-        "therefore not subject to the variance test",
+        "ecosystem topology (fallback)",
+        "no rate candidate was informative; the topology result is not a rate and the rule "
+        "therefore does not apply to it",
     )
 
 
@@ -668,6 +682,113 @@ def issuer_documents(reports: list, denominator: str) -> dict[str, dict | None]:
             # finding for the topology rather than a reason to count the issuer twice.
             documents.setdefault(issuer, doc if isinstance(doc, dict) else None)
     return documents
+
+
+def manski_bounds(p_hat: float, unobserved: int, observed: int) -> tuple[float, float]:
+    """Worst-case identified set for a rate measured on only part of its population.
+
+    Section 9.2 bounds the study's principal threat to validity rather than assuming it away.
+    Blocking is not independent of what is being measured -- mature deployments are the ones
+    behind a WAF -- so R4's decision to send every access block to `ERROR` protects the
+    conformance rates from a classification bias by converting it into a *selection* bias, and
+    a selection bias has to be bounded or admitted.
+
+    These are Manski's worst-case bounds and they assume nothing whatever about the
+    unobserved units: with an unobserved fraction `b`, everything we could not see might have
+    passed, or none of it might have. The identified set is therefore
+    `[p(1-b), p(1-b)+b]`, of width exactly `b`. That width does not shrink with more
+    observations, which is the point: it measures ignorance rather than sampling noise, and
+    where it is wider than the cluster-robust interval the honest reading is that a second
+    vantage point buys more than a larger corpus.
+
+    That last sentence is true and was, until 10 August 2026, quoted without the measurement
+    that bounds it. `unreachable_composition` supplies it: most of `b` is hosts that no longer
+    resolve, which no vantage point recovers. A second vantage buys the access blocks and
+    whatever share of the timeouts is bot management -- worth having, since a block correlates
+    with the maturity being measured in a way a dead host does not, but not the whole of `b`.
+    """
+    total = observed + unobserved
+    if total <= 0:
+        return (0.0, 0.0)
+    b = unobserved / total
+    low = p_hat * (1.0 - b)
+    return (low, min(1.0, low + b))
+
+
+def unreachable_composition(reports: list) -> dict:
+    """What is actually inside the unobserved fraction Section 9.2 bounds.
+
+    Written on 10 August 2026, after an external reviewer read Section 9.2's sentence about
+    WAFs and concluded that the study loses mature enterprise deployments to bot management.
+    The sentence invited that reading and the corpus does not support it: the share is
+    dominated by hosts that no longer exist. Until this function there was no number either
+    way, which is the defect. Section 9.2 named a mechanism, attached the whole unobserved
+    fraction to it by implication, and nothing in the run said how much of the fraction the
+    mechanism could account for.
+
+    The categories come from `ErrorKind`, not from free text, so a new member or a renamed
+    one shows up as an uncategorised count rather than being silently folded into another
+    bucket. Three groupings matter and they are reported separately because they are
+    different kinds of missing:
+
+    * `blocked` -- the host answered and refused us. This is the only bucket the WAF
+      mechanism can live in, and R4 sends it to ERROR precisely because it correlates with
+      the maturity being measured.
+    * `dead` -- DNS, TLS and connection failures. Nothing answered. A second vantage point
+      cannot recover these, because there is nothing at the other end to recover.
+    * `scope_gated` -- `OUT_OF_SCOPE`: our per-host ceiling was spent, or a redirect pointed
+      somewhere the scope statement forbids. `fetcher.ErrorKind` already says of this member
+      that it is "our decision, so it leaves every denominator exactly as the two above do",
+      meaning robots and opt-out. It did not leave the one in Section 9.2, which is the same
+      class of defect as the kill switch counting robots exclusions on 30 July 2026: our own
+      configuration published as a property of the ecosystem.
+
+    `timeout` is deliberately left in neither `blocked` nor `dead`. A silent drop by a bot
+    manager and an abandoned host that never completes a handshake are indistinguishable from
+    outside, and inventing a split would be exactly the assumption a Manski bound exists to
+    avoid. It is reported on its own so a reader can put it on whichever side they argue for.
+
+    The population is the one Section 9.2's `b` is computed over: endpoints that did not
+    answer, excluding those robots.txt or the opt-out list removed, since those are counted
+    in the exclusion ledger instead.
+    """
+    from .fetcher import ErrorKind
+
+    # The two strings `checks_oauth` writes when a fetch produced no status. Reconstructed
+    # from the enum rather than copied, so that renaming a member breaks the mapping loudly
+    # instead of quietly emptying a bucket.
+    by_detail = {f"not observed: {kind.value} (R4/R5)": kind.value for kind in ErrorKind}
+    by_detail["access block (R4)"] = ErrorKind.BLOCKED.value
+
+    DEAD = {ErrorKind.DNS.value, ErrorKind.TLS.value, ErrorKind.CONNECTION.value}
+
+    counts: dict[str, int] = {}
+    total = 0
+    for report in reports:
+        if report.reachable is not False or report.robots_allowed is False or report.opted_out:
+            continue
+        total += 1
+        kind = None
+        for check in report.checks:
+            kind = by_detail.get(check.detail)
+            if kind is not None:
+                break
+        counts[kind or "uncategorised"] = counts.get(kind or "uncategorised", 0) + 1
+
+    scope_gated = counts.get(ErrorKind.OUT_OF_SCOPE.value, 0)
+    blocked = counts.get(ErrorKind.BLOCKED.value, 0)
+    return {
+        "total": total,
+        "by_kind": dict(sorted(counts.items())),
+        "blocked": blocked,
+        "dead": sum(counts.get(k, 0) for k in DEAD),
+        "timeout": counts.get(ErrorKind.TIMEOUT.value, 0),
+        "scope_gated": scope_gated,
+        # What Section 9.2's narrowest row should be computed over: endpoints unobserved for
+        # a reason that belongs to the deployment rather than to us.
+        "operator_caused": total - scope_gated,
+        "uncategorised": counts.get("uncategorised", 0),
+    }
 
 
 def withheld_issuer_ledger(reports: list) -> dict:
@@ -769,8 +890,13 @@ def _publishes_protected_resources(doc: dict | None) -> bool:
 # collection begins.
 HEADLINE_CANDIDATES: tuple[tuple[int, str, str], ...] = (
     (1, "C16 -- issuers advertising the RFC 9207 mix-up defence", "declared"),
-    (2, "C18 -- issuers publishing RFC 9728 §4 protected_resources", "observed"),
-    (4, "C12/C13 -- mechanical conformance of declared identifiers", "apex"),
+    # Rank 2's label named the metadata field verbatim and rank 4's did not say which half of
+    # the pair the printed estimate belongs to. Both were reworded on 6 August 2026 for the
+    # manuscript; the ranks, the checks referred to and the unit each is read at are
+    # untouched, and those are what R11.1 froze.
+    (2, "C18 -- issuers publishing the protected-resource list of RFC 9728, Section 4",
+     "observed"),
+    (4, "C12/C13 -- mechanical conformance of declared identifiers, weaker half", "apex"),
     (5, "C17 -- issuers offering non-interactive client bootstrap", "declared"),
 )
 

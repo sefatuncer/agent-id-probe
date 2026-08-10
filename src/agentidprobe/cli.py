@@ -222,7 +222,7 @@ def _cmd_analyse(args: argparse.Namespace) -> int:
         print(f"      {estimate['p_hat']:.1%} "
               f"[{estimate['ci_lo']:.1%}, {estimate['ci_hi']:.1%}] "
               f"n={estimate['n']} m={estimate['m']} ({candidate['denominator']}) "
-              f"-- variance test {verdict}")
+              f"-- informativeness rule: {verdict}")
     print(f"\nwritten to {destination}")
     return 0
 

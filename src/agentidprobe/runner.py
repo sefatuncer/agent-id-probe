@@ -513,13 +513,22 @@ def summarise(reports: list[EndpointReport]) -> dict:
         for label, check in stages[1:]:
             n_a = [r for r in eligible if r.outcome_of(check) is Outcome.NOT_APPLICABLE]
             err = [r for r in eligible if r.outcome_of(check) is Outcome.ERROR]
-            applicable = [r for r in eligible if r not in n_a and r not in err]
+            # UNSPECIFIED is the instrument declining to score, so it cannot sit in a
+            # denominator: a rate computed over it reports our own uncertainty as the
+            # deployment's failure, which is the one thing the outcome exists to prevent.
+            # It was counted as a non-pass until 6 August 2026, which made the published C12
+            # rate the strict half of a sensitivity pair the results section introduces as
+            # the lenient one.
+            uns = [r for r in eligible if r.outcome_of(check) is Outcome.UNSPECIFIED]
+            removed = {id(r) for r in n_a} | {id(r) for r in err} | {id(r) for r in uns}
+            applicable = [r for r in eligible if id(r) not in removed]
             passed = [r for r in applicable if r.outcome_of(check) is Outcome.PASS]
             rows.append({
                 "stage": label,
                 "n": len(passed),
                 "eligible": len(applicable),
-                "excluded": {"not_applicable": len(n_a), "error": len(err)},
+                "excluded": {"not_applicable": len(n_a), "error": len(err),
+                             "unspecified": len(uns)},
             })
             # The funnel invariant: a stage may only narrow the previous stage's PASS set.
             eligible = passed
