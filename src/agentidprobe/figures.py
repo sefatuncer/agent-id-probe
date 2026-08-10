@@ -591,7 +591,12 @@ def figure2_delegation(
         ax_b.set_axisbelow(True)
         for side in ("top", "right", "left"):
             ax_b.spines[side].set_visible(False)
-        ax_b.set_title("(b)  does the issuer belong to the resource's operator?",
+        # "operator" was retired from this paper's vocabulary because a registrable domain is
+        # a proxy for the operating organisation and errs in both directions -- the limitations
+        # section says the topology is reported as a domain relation "and never as an
+        # organisational one". The panel title was the one place still asking the retired
+        # question, which is the first line a reader sees when they look at the figure.
+        ax_b.set_title("(b)  is the issuer inside the resource's own registrable domain?",
                        loc="left", fontsize=8.0, fontweight="bold", pad=20)
         ax_b.legend(loc="upper left", bbox_to_anchor=(0.0, -0.26), frameon=False,
                     ncol=2, handlelength=1.8, columnspacing=1.2, borderaxespad=0)

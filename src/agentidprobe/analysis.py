@@ -715,6 +715,123 @@ def manski_bounds(p_hat: float, unobserved: int, observed: int) -> tuple[float, 
     return (low, min(1.0, low + b))
 
 
+def exposure_analysis(reports: list, conf: float = 0.95) -> dict:
+    """The intersection the paper's thesis is about, which nothing computed until now.
+
+    The argument is that the delegation surface is *narrow* and, *where it is entered*,
+    unevidenced. Both halves were measured and neither was measured on the population the
+    sentence is about: the topology rate is over declarations, and the evidence rates are over
+    every issuer the corpus names. Three referees independently asked for the same missing
+    quantity -- of the issuers reached by a declaration that leaves the resource's own
+    registrable domain, how many publish the field that would let a client corroborate the
+    pointer, and how many advertise the mix-up defence?
+
+    Four groups of quantity come out of this, and each answers an objection that was raised:
+
+    * `exposed_*` -- the crossing population expressed at the units a reader can hold. The
+      discussion said "a twentieth of the corpus" while the rate was over declarations, which
+      is a different denominator and roughly three and a half times larger. Endpoints and
+      apexes that declare at least one crossing issuer are counted here so the sentence can be
+      written over the population it names.
+    * `crossing_issuers` -- the C16/C18 rates restricted to issuers named by a crossing
+      declaration. This is the paper's thesis stated over its own population.
+    * `concentration_by_unit` -- the same concentration statistic at the issuer URL, the
+      issuer host and the issuer registrable domain. Reported at three units because the
+      published figure is at the URL unit, where one registrable domain appeared four times
+      in the top ten, so dispersion at that unit is partly an artefact of identifier
+      granularity.
+    * `concentration_crossing` -- concentration over crossing edges only. The comparison the
+      related-work section sets up is about reliance on infrastructure the resource does not
+      operate, and self-edges cannot answer it: when most declarations stay inside their own
+      domain, a low index follows mechanically from the number of distinct domains.
+
+    No new measurement. Every input is already in the stored evidence.
+    """
+    graph = build_delegation_graph(reports)
+
+    # -- the crossing population, at three units ---------------------------------------
+    crossing_edges = [
+        (resource_apex, issuer) for resource_apex, issuer in graph.edges
+        if (issuer_apex := _apex(issuer)) is not None and issuer_apex != resource_apex
+    ]
+    crossing_issuers = {issuer for _, issuer in crossing_edges}
+    crossing_apexes = {resource_apex for resource_apex, _ in crossing_edges}
+
+    # An endpoint is exposed when any issuer it declares leaves its own registrable domain.
+    exposed_endpoints = 0
+    declaring_endpoints = 0
+    for report in reports:
+        declared = (report.evidence or {}).get("authorization_servers") or []
+        declared = [d for d in declared if isinstance(d, str)]
+        if not declared:
+            continue
+        declaring_endpoints += 1
+        resource_apex = report.endpoint.apex_domain
+        if resource_apex and any(
+            (ia := _apex(d)) is not None and ia != resource_apex for d in declared
+        ):
+            exposed_endpoints += 1
+
+    # -- evidence rates restricted to the crossing issuers -------------------------------
+    documents = issuer_documents(reports, "declared")
+    crossing_docs = {i: d for i, d in documents.items() if i in crossing_issuers}
+
+    def _rate(predicate, docs: dict) -> dict:
+        # Clustered on the issuer's own registrable domain, as every issuer-level rate is.
+        buckets: dict[str, list[int]] = {}
+        for issuer, document in docs.items():
+            key = _apex(issuer) or issuer
+            bucket = buckets.setdefault(key, [0, 0])
+            bucket[1] += 1
+            if predicate(document):
+                bucket[0] += 1
+        clusters = [(k, n) for k, n in buckets.values()]
+        return cluster_robust_proportion(clusters, conf=conf).as_record()
+
+    # -- concentration at three issuer units, and over crossing edges only ---------------
+    def _concentration(edges: list, key) -> dict:
+        counts: dict[str, int] = {}
+        for _, issuer in edges:
+            identifier = key(issuer)
+            if identifier is None:
+                continue
+            counts[identifier] = counts.get(identifier, 0) + 1
+        total = sum(counts.values())
+        if total == 0:
+            return {"issuers": 0, "hhi": None, "top10_share": None, "effective_issuers": None}
+        shares = sorted((c / total for c in counts.values()), reverse=True)
+        hhi = sum(s * s for s in shares)
+        return {
+            "issuers": len(counts), "edges": total, "hhi": hhi,
+            "top1_share": sum(shares[:1]), "top10_share": sum(shares[:10]),
+            "effective_issuers": 1.0 / hhi if hhi > 0 else None,
+        }
+
+    def _host(issuer: str) -> str | None:
+        from urllib.parse import urlsplit
+        return urlsplit(issuer).hostname
+
+    units = {"url": lambda i: i, "host": _host, "registrable_domain": _apex}
+    return {
+        "declaring_endpoints": declaring_endpoints,
+        "exposed_endpoints": exposed_endpoints,
+        "exposed_apexes": len(crossing_apexes),
+        "crossing_edges": len(crossing_edges),
+        "crossing_issuers": len(crossing_issuers),
+        "crossing_issuers_with_document": sum(1 for d in crossing_docs.values() if d),
+        "c16_crossing": _rate(_advertises_iss, crossing_docs),
+        "c18_crossing": _rate(_publishes_protected_resources, crossing_docs),
+        "c16_all": _rate(_advertises_iss, documents),
+        "c18_all": _rate(_publishes_protected_resources, documents),
+        "concentration_by_unit": {
+            name: _concentration(graph.edges, key) for name, key in units.items()
+        },
+        "concentration_crossing": {
+            name: _concentration(crossing_edges, key) for name, key in units.items()
+        },
+    }
+
+
 def unreachable_composition(reports: list) -> dict:
     """What is actually inside the unobserved fraction Section 9.2 bounds.
 
