@@ -112,6 +112,59 @@ def test_the_clause_label_matches_an_anchor_the_code_emits(check: CheckId):
 
 
 @pytest.mark.parametrize("check", list(CheckId), ids=lambda c: c.value)
+def test_the_label_names_the_clause_that_actually_convicts(check: CheckId):
+    """The two tests around this one accept a label matching *any* emission site. That is
+    too weak for a row whose "Heaviest outcome" column says *failure*.
+
+    C05 passed both of them while labelled `RFC 9728 §3.2` alone. That section's MUSTs
+    govern the shape of a response a server chooses to give — 200 OK, `application/json`,
+    ignore what you do not understand — and none of them obliges a resource server to
+    publish anything, so a server publishing nothing violates none of them. The clause that
+    makes absence a violation is MCP's, and the instrument had recorded it correctly at the
+    emission site all along: 501 of C05's 525 census failures cite MCP, 24 cite RFC 9728
+    §3.2. Table 1 pointed 95% of the check's convictions at a clause authorising none of
+    them, in the row a reviewer opens first, and nothing failed.
+
+    So: if a check can convict, the label must match a site that emits a *failure*.
+    """
+    label, _ = SPEC_ANCHOR_SUMMARY[check]
+    convicting = [
+        e for e in _sites(check)
+        if any(str(o).startswith("fail") for o in e.outcomes)
+    ]
+    if not convicting:
+        pytest.skip(f"{check.value} cannot report a failure")
+
+    def documents(text: str) -> set[str]:
+        found = set(re.findall(r"rfc\s*(\d{4})", text.lower()))
+        found = {f"rfc{n}" for n in found}
+        for name in ("a2a", "mcp"):
+            if re.search(rf"\b{name}\b", text.lower()):
+                found.add(name)
+        return found
+
+    named = documents(label)
+    assert named, f"{check.value}: label {label!r} names no document"
+
+    # Direction matters. Asking "does the label match some failing site" is what the tests
+    # above already do, and C05 satisfied it while wrong: its label said RFC 9728 and one of
+    # its failing sites cites "MCP: servers MUST implement RFC 9728", which contains that
+    # string. Asking the reverse -- is every failing site's anchor represented in the label
+    # -- is what actually binds, because it is the question a reviewer asks: I followed your
+    # label, does it lead me to the sentence behind this verdict?
+    for site in convicting:
+        cited = documents(f"{site.spec_ref} {site.spec_url}")
+        if not cited:
+            continue
+        assert cited & named, (
+            f"{check.value}: a site that emits a failure cites {sorted(cited)} "
+            f"({site.module}:{site.lineno}, spec_ref={site.spec_ref!r}) and Table 1's "
+            f"label {label!r} names only {sorted(named)}. A reviewer following the label "
+            f"would not reach the clause behind that verdict."
+        )
+
+
+@pytest.mark.parametrize("check", list(CheckId), ids=lambda c: c.value)
 def test_the_clause_label_matches_a_section_the_code_emits(check: CheckId):
     """The section number, not just the document -- and this is the half that was missing.
 
@@ -199,14 +252,14 @@ def test_the_heaviest_outcome_column_is_derived_not_asserted():
     for check in CheckId:
         strength = GEN._strongest_strength(_sites(check))
         cell = GEN._heaviest_outcome(check, strength)
-        if check in DESCRIPTIVE_ONLY:
-            assert cell == "descriptive only"
-        elif strength == NormativeStrength.MUST.value:
-            assert cell == "`FAIL_*`"
+        # The descriptive-only flag moved to its own column on 8 August 2026; this column
+        # now reports the strength rule alone, for every check.
+        if strength == NormativeStrength.MUST.value:
+            assert cell == "*failure*"
         elif strength == NormativeStrength.SHOULD.value:
-            assert cell == "`UNSPECIFIED`"
+            assert cell == "*unspecified*"
         else:
-            assert cell == "`NOT_APPLICABLE`"
+            assert cell == "*not applicable*"
 
 
 def test_every_failable_check_is_anchored_to_a_must():

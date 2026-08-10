@@ -375,13 +375,22 @@ def _heaviest_outcome(check: CheckId, strength: str) -> str:
     a description of it, and the claim is precisely the one a sceptical reviewer is there
     to test.
     """
-    if check in DESCRIPTIVE_ONLY:
-        return "descriptive only"
+    # The outcome is named the way the manuscript's prose names it, not the way the enum
+    # spells it. Table 1 printed `FAIL_*` and `UNSPECIFIED` in monospace while Section 4.3
+    # called the same outcomes *failure* and *unspecified*, so the paper's most-read table
+    # was the one place its own taxonomy appeared in a different vocabulary. The mapping is
+    # still derived from the strength rather than typed per row, which is the property this
+    # function exists for.
+    # Descriptive-only status is a *second, independent* axis and now has its own column,
+    # so this one reports what the anchoring strength permits and nothing else. Collapsing
+    # both into one cell meant no row of Table 1 used the same vocabulary as the strength
+    # table it cites: SHOULD mapped to "unspecified" on one row and "descriptive only" on
+    # the next, and MAY never mapped to "not applicable" anywhere.
     return {
-        NormativeStrength.MUST.value: "`FAIL_*`",
-        NormativeStrength.SHOULD.value: "`UNSPECIFIED`",
-        NormativeStrength.MAY.value: "`NOT_APPLICABLE`",
-        NormativeStrength.SILENT.value: "`NOT_APPLICABLE`",
+        NormativeStrength.MUST.value: "*failure*",
+        NormativeStrength.SHOULD.value: "*unspecified*",
+        NormativeStrength.MAY.value: "*not applicable*",
+        NormativeStrength.SILENT.value: "*not applicable*",
     }[strength]
 
 
@@ -409,8 +418,8 @@ def render_paper_table1() -> str:
         by_check.setdefault(emission.check, []).append(emission)
 
     lines = [
-        "| ID | Clause | Strength | Heaviest outcome | Binds | Funnel |",
-        "|---|---|---|---|---|---|",
+        "| ID | Clause | Strength | Heaviest outcome | Descriptive only | Binds | Funnel |",
+        "|---|---|---|---|---|---|---|",
     ]
     for check in CheckId:
         label, party = SPEC_ANCHOR_SUMMARY[check]
@@ -420,7 +429,9 @@ def render_paper_table1() -> str:
         funnel = _funnel_of(check).replace("_", " ") or "—"
         lines.append(
             f"| {check.value} | {label} | {strength.upper()} | "
-            f"{_heaviest_outcome(check, strength)} | {party.value}{marker} | {funnel} |"
+            f"{_heaviest_outcome(check, strength)} | "
+            f"{'yes' if check in DESCRIPTIVE_ONLY else '—'} | "
+            f"{party.value}{marker} | {funnel} |"
         )
     return "\n".join(lines) + "\n"
 

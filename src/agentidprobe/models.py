@@ -164,7 +164,18 @@ SPEC_ANCHOR_SUMMARY: dict[CheckId, tuple[str, BoundParty]] = {
     # revision names no canonicalisation scheme at all. It stays in the label because it is
     # what the payload was built with and a reader reproducing the verdict needs it.
     CheckId.SIGNATURE_VERIFIES: ("RFC 7515 §5.2; RFC 8785", BoundParty.CARD_PUBLISHER),
-    CheckId.PRM_PRESENT: ("RFC 9728 §3.2", BoundParty.RESOURCE_SERVER),
+    # Both documents, because the check convicts under both and the heavier half is MCP's.
+    # The label read "RFC 9728 §3.2" alone until 6 August 2026, and §3.2 does not oblige a
+    # resource server to publish anything: its MUSTs govern the *form* of a response that is
+    # given ("MUST use the 200 OK HTTP status code", "MUST be ignored", "MUST be omitted"),
+    # so a server publishing nothing violates none of them. What makes absence a violation is
+    # MCP's "MCP servers MUST implement OAuth 2.0 Protected Resource Metadata (RFC9728)",
+    # which is what the emission site for FAIL_UNIMPLEMENTED has always recorded. Measured on
+    # the census: 501 of C05's 525 failures cite MCP and 24 cite RFC 9728 §3.2 (the malformed
+    # -body branch, where §3.2 genuinely binds). Table 1 is the row a reviewer checks first,
+    # and it was pointing 95% of this check's convictions at a clause that authorises none of
+    # them.
+    CheckId.PRM_PRESENT: ("MCP Authorization; RFC 9728 §3.2", BoundParty.RESOURCE_SERVER),
     CheckId.WWW_AUTH_RESOURCE_METADATA: ("MCP Authorization, discovery",
                                          BoundParty.RESOURCE_SERVER),
     CheckId.SENDER_CONSTRAINED: ("RFC 9449", BoundParty.AUTHORIZATION_SERVER),

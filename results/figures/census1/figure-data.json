@@ -1,0 +1,196 @@
+{
+  "endpoints": 16578,
+  "figure2": {
+    "concentration": {
+      "effective_issuers": 568.2925132201128,
+      "hhi": 0.001759657177839112,
+      "issuers": 2053,
+      "top10_share": 0.07191919191919191,
+      "top1_share": 0.03232323232323232,
+      "top3_share": 0.042828282828282827,
+      "top5_share": 0.05171717171717172
+    },
+    "cross_check": {
+      "cross_check_passes": 12,
+      "cross_check_possible": 12,
+      "issuers": 1980
+    },
+    "cross_operator_rate": {
+      "ci_hi": 0.18590145132603872,
+      "ci_lo": 0.06783592241133504,
+      "deff": 20.241955840983618,
+      "k": 314,
+      "m": 1818,
+      "method": "cluster-robust t(1817)",
+      "n": 2475,
+      "n_eff": 122.27079336814383,
+      "naive_ci_hi": 0.1405617934349741,
+      "naive_ci_lo": 0.11433206575086496,
+      "p_hat": 0.12686868686868688
+    },
+    "declared_edges": 2475,
+    "issuers": 2053,
+    "relation": {
+      "cross_operator": 314,
+      "same_operator": 2160,
+      "total": 2475,
+      "unknown_operator": 1
+    },
+    "shared_across_apexes": 16,
+    "tail": {
+      "count": 2297,
+      "issuers": 2043,
+      "share": 0.9280808080808081
+    },
+    "top_issuers": [
+      {
+        "count": 80,
+        "issuer": "https://auth.atxp.ai",
+        "share": 0.03232323232323232
+      },
+      {
+        "count": 13,
+        "issuer": "https://accounts.google.com/",
+        "share": 0.0052525252525252525
+      },
+      {
+        "count": 13,
+        "issuer": "https://feedoracle.io",
+        "share": 0.0052525252525252525
+      },
+      {
+        "count": 12,
+        "issuer": "https://api.mcpbundles.com",
+        "share": 0.0048484848484848485
+      },
+      {
+        "count": 10,
+        "issuer": "https://auth.infobip.com/realms/infobip",
+        "share": 0.00404040404040404
+      },
+      {
+        "count": 10,
+        "issuer": "https://bible-study.mctx.ai",
+        "share": 0.00404040404040404
+      },
+      {
+        "count": 10,
+        "issuer": "https://console-backend.apify.com",
+        "share": 0.00404040404040404
+      },
+      {
+        "count": 10,
+        "issuer": "https://help.mctx.ai",
+        "share": 0.00404040404040404
+      },
+      {
+        "count": 10,
+        "issuer": "https://hidden-empire.mctx.ai",
+        "share": 0.00404040404040404
+      },
+      {
+        "count": 10,
+        "issuer": "https://notes.mctx.ai",
+        "share": 0.00404040404040404
+      }
+    ]
+  },
+  "figure3": {
+    "bands": {
+      "ceiling": 0.98,
+      "floor": 0.02,
+      "max_half_width": 0.1
+    },
+    "candidates": [
+      {
+        "denominator": "declared",
+        "estimate": {
+          "ci_hi": 0.0754200140499124,
+          "ci_lo": 0.04939714830991207,
+          "deff": 1.542570354674844,
+          "k": 128,
+          "m": 1706,
+          "method": "cluster-robust t(1705)",
+          "n": 2051,
+          "n_eff": 1329.598999348284,
+          "naive_ci_hi": 0.07371754843372641,
+          "naive_ci_lo": 0.05273574353558413,
+          "p_hat": 0.062408581179912236
+        },
+        "is_headline": true,
+        "label": "C16 -- issuers advertising the RFC 9207 mix-up defence",
+        "passed": true,
+        "rank": 1,
+        "reason": "6.2% [0.049, 0.075] is informative at publishable precision (+/-1.3%, m=1706)"
+      },
+      {
+        "denominator": "observed",
+        "estimate": {
+          "ci_hi": 0.009554249604784352,
+          "ci_lo": 0.0025669625164277694,
+          "deff": 1.042823744899561,
+          "k": 12,
+          "m": 1646,
+          "method": "cluster-robust t(1645)",
+          "n": 1980,
+          "n_eff": 1898.6909433968658,
+          "naive_ci_hi": 0.010563791502316386,
+          "naive_ci_lo": 0.0034703279402306304,
+          "p_hat": 0.006060606060606061
+        },
+        "is_headline": false,
+        "label": "C18 -- issuers publishing the protected-resource list of RFC 9728, Section 4",
+        "passed": false,
+        "rank": 2,
+        "reason": "0.6% [0.003, 0.010] is at or below 2%: essentially nobody"
+      },
+      {
+        "denominator": "apex",
+        "estimate": {
+          "ci_hi": 0.7309734689890303,
+          "ci_lo": 0.6897974089552953,
+          "deff": 1.0005356186395657,
+          "k": 1327,
+          "m": 1868,
+          "method": "cluster-robust t(1867)",
+          "n": 1868,
+          "n_eff": 1866.9999999999309,
+          "naive_ci_hi": 0.7305062959531256,
+          "naive_ci_lo": 0.6894010591232586,
+          "p_hat": 0.7103854389721628
+        },
+        "is_headline": false,
+        "label": "C12/C13 -- mechanical conformance of declared identifiers, weaker half",
+        "passed": true,
+        "rank": 4,
+        "reason": "71.0% [0.690, 0.731] is informative at publishable precision (+/-2.1%, m=1868)"
+      },
+      {
+        "denominator": "declared",
+        "estimate": {
+          "ci_hi": 0.9412061980828882,
+          "ci_lo": 0.9125236897766925,
+          "deff": 1.6176511568160177,
+          "k": 1901,
+          "m": 1706,
+          "method": "cluster-robust t(1705)",
+          "n": 2051,
+          "n_eff": 1267.8876971453672,
+          "naive_ci_hi": 0.9373523842898914,
+          "naive_ci_lo": 0.914781479644224,
+          "p_hat": 0.9268649439297904
+        },
+        "is_headline": false,
+        "label": "C17 -- issuers offering non-interactive client bootstrap",
+        "passed": true,
+        "rank": 5,
+        "reason": "92.7% [0.913, 0.941] is informative at publishable precision (+/-1.4%, m=1706)"
+      }
+    ],
+    "headline": {
+      "reason": "6.2% [0.049, 0.075] is informative at publishable precision (+/-1.3%, m=1706)",
+      "selected": "C16 -- issuers advertising the RFC 9207 mix-up defence"
+    }
+  },
+  "source": "measurement"
+}

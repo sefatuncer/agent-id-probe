@@ -86,7 +86,7 @@ from .models import (
 # figures are drawn at double width because both carry text that does not survive being
 # reduced to 90 mm.
 FIG_WIDTH_IN = 7.48        # 190 mm
-FIG1_HEIGHT_IN = 8.40
+FIG1_HEIGHT_IN = 8.85
 FIG2_HEIGHT_IN = 3.40
 
 # Greyscale with a single accent. A journal figure is read on paper and photocopied, and
@@ -184,8 +184,10 @@ class ChainStep:
 
 
 # Referencing CheckId members rather than the strings "C05", "C12" is deliberate: see the
-# module docstring. The clause text is quoted, not paraphrased, so that a reader can grep
-# for it in the RFC.
+# module docstring. Section numbers are spelled out and field names are given descriptively,
+# so that the figure reads in the same register as the running text; the labels agreed with
+# the instrument but not with the manuscript until 6 August 2026, when C05 was carrying
+# RFC 9728 §3.1 here and §3.2 in Table 1.
 CHAIN: tuple[ChainStep, ...] = (
     ChainStep(
         node="MCP client",
@@ -195,25 +197,27 @@ CHAIN: tuple[ChainStep, ...] = (
     ChainStep(
         node="Resource server",
         detail="https://example.org/mcp",
-        edge="1.  request  →  401 + WWW-Authenticate: resource_metadata",
-        clause="MCP Authorization (2025-06-18 MUST; 2025-11-25 one of several routes)",
+        edge="1.  request  →  401 carrying a pointer to the metadata",
+        clause="MCP Authorization, discovery (2025-06-18 MUST; 2025-11-25 one of several "
+              "routes)",
         binds="resource server",
         checks=(CheckId.WWW_AUTH_RESOURCE_METADATA,),
     ),
     ChainStep(
         node="Protected-resource metadata",
-        detail="/.well-known/oauth-protected-resource/mcp\n(root form tried as well)",
+        detail="at a well-known location derived from\n"
+               "the resource; the root form is tried too",
         edge="2.  fetch protected-resource metadata",
-        clause="RFC 9728 §3.1 (path-inserted well-known URI); §3.3 `resource` MUST be "
-              "identical to the resource identifier",
+        clause="RFC 9728, Section 3.2 defines it; Section 3.3 requires the identifier "
+              "it declares to be identical to the one it was served under",
         binds="resource server",
         checks=(CheckId.PRM_PRESENT, CheckId.PRM_RESOURCE_IDENTITY_MATCH),
     ),
     ChainStep(
-        node="authorization_servers: [ iss₁, iss₂, … ]",
-        detail="a list, with no stated relation to the resource",
+        node="The declared issuer list",
+        detail="issuers, with no stated relation to the resource",
         edge="3.  read the declared issuers",
-        clause="MCP: the list MUST contain at least one entry",
+        clause="MCP Authorization: the list MUST contain at least one entry",
         binds="resource server",
         checks=(CheckId.PRM_PRESENT,),
     ),
@@ -221,15 +225,18 @@ CHAIN: tuple[ChainStep, ...] = (
         node="The client selects one issuer  ‡",
         detail="no clause governs this edge",
         edge="4.  choose",
-        clause="RFC 9728 §7.6 — out of scope; MCP delegates the choice to the client unchanged",
+        clause="RFC 9728, Section 7.6: out of scope. MCP delegates the choice to the client "
+              "unchanged",
         binds="nobody",
         out_of_scope=True,
     ),
     ChainStep(
         node="Authorization-server metadata",
-        detail="/.well-known/oauth-authorization-server\n(openid-configuration tried as well)",
+        detail="at a well-known location built from\n"
+               "the issuer; OpenID discovery tried too",
         edge="5.  fetch authorization-server metadata",
-        clause="RFC 8414 §3.3: `issuer` MUST be identical to the issuer requested",
+        clause="RFC 8414, Section 3.3: the issuer returned MUST be identical to the issuer "
+              "requested",
         binds="authorization server",
         checks=(CheckId.AS_CORRESPONDENCE,),
     ),
@@ -237,8 +244,9 @@ CHAIN: tuple[ChainStep, ...] = (
         node="Token request",
         detail="the client now trusts an issuer it could not verify",
         edge="6.  authorize",
-        clause="RFC 9207 §2.3: support for `iss` MUST be advertised in that metadata; "
-              "RFC 9728 §4 `protected_resources` is OPTIONAL",
+        clause="RFC 9207, Section 2.3: a server supporting that specification MUST advertise "
+              "its support for the issuer-identification parameter. The list of protected "
+              "resources of RFC 9728, Section 4 is OPTIONAL",
         binds="authorization server",
         # C14 was listed here until 29 July 2026, under a clause string citing RFC 9207 and
         # RFC 9728 §4 -- neither of which says anything about PKCE. The figure was asserting
@@ -279,7 +287,7 @@ def figure1_discovery_chain(out_dir: Path, formats: tuple[str, ...] = ("pdf", "p
         top, bottom = 95.0, 26.0
         slot = (top - bottom) / n
         box_x, box_w = 10.0, 38.0
-        box_h = slot * 0.78
+        box_h = slot * 0.84
         ann_x = box_x + box_w + 4.0
 
         centres: list[float] = []
@@ -301,7 +309,15 @@ def figure1_discovery_chain(out_dir: Path, formats: tuple[str, ...] = ("pdf", "p
                     fontsize=8.0, fontweight="bold",
                     color=ACCENT if emphasised else INK, va="top", zorder=4)
             if step.detail:
-                ax.text(box_x + 1.8, centre + box_h / 2 - 3.8, step.detail,
+                # Wrapped to the box rather than to the string: the box is 38 of 100 axis
+                # units and at this size that is about 52 characters. Left unwrapped, four
+                # of the seven details ran past the box edge and overprinted the clause
+                # column beside it.
+                detail = "\n".join(
+                    line for paragraph in step.detail.splitlines()
+                    for line in textwrap.wrap(paragraph, width=44) or [""]
+                )
+                ax.text(box_x + 1.8, centre + box_h / 2 - 3.8, detail,
                         fontsize=6.8, color=INK_MUTED, va="top", linespacing=1.4, zorder=4)
 
             if i == 0:
@@ -325,7 +341,7 @@ def figure1_discovery_chain(out_dir: Path, formats: tuple[str, ...] = ("pdf", "p
             y = centre + box_h / 2 + 0.4
             ax.text(ann_x, y, step.edge, fontsize=7.5, fontweight="bold",
                     color=ACCENT if step.out_of_scope else INK, va="top")
-            clause = textwrap.fill(step.clause, width=66)
+            clause = textwrap.fill(step.clause, width=74)
             ax.text(ann_x, y - 2.6, clause, fontsize=6.6, color=INK_MUTED,
                     va="top", linespacing=1.4)
             binds_y = y - 2.6 - 2.2 * (clause.count("\n") + 1)
@@ -365,7 +381,7 @@ def figure1_discovery_chain(out_dir: Path, formats: tuple[str, ...] = ("pdf", "p
             linewidth=0.7, edgecolor=RULE, facecolor=SURFACE, zorder=1,
         ))
         ax.text(box_x - 7.9, 19.4,
-                "‡   RFC 9728 §7.6, the clause that governs the selection step:",
+                "‡   RFC 9728, Section 7.6, the clause that governs the selection step:",
                 fontsize=7.0, fontweight="bold", color=ACCENT, va="top")
         ax.text(box_x - 7.9, 16.6,
                 "“Secure determination of appropriate authorization servers to use with a "
@@ -375,20 +391,22 @@ def figure1_discovery_chain(out_dir: Path, formats: tuple[str, ...] = ("pdf", "p
                 "proxy to a valid authorization server without it being detected.”",
                 fontsize=6.8, color=INK, va="top", linespacing=1.5)
         ax.text(box_x - 7.9, 8.6,
-                "†   The only mitigation §7.6 proposes: cross-check the resource's issuer "
+                "†   The only mitigation Section 7.6 proposes: cross-check the resource's issuer "
                 "list against the issuer's resource list.",
                 fontsize=7.0, fontweight="bold", color=INK_MUTED, va="top")
         ax.text(box_x - 7.9, 5.9,
-                "Possible only where the authorization server publishes "
-                "`protected_resources` (RFC 9728 §4), which is OPTIONAL — "
+                "Possible only where the authorization server publishes its own list of "
+                "protected resources (RFC 9728, Section 4), which is OPTIONAL — "
                 f"[{CheckId.PROTECTED_RESOURCES_DECLARED.value}].\n"
                 "Whether anybody does is the quantity this study reports.",
                 fontsize=6.8, color=INK_MUTED, va="top", linespacing=1.5)
 
-        ax.text(box_x - 9.5, 99.3,
-                "Figure 1.  The discovery chain from a client's first request to its token "
-                "request, and the party each clause binds.",
-                fontsize=8.0, fontweight="bold", va="top")
+        # No title is drawn inside the figure. The manuscript sets one below it with
+        # `\caption`, and a figure that carries its own heading as well prints the same
+        # sentence twice on the page -- the duplicate a copy editor removes first, and one of
+        # the few defects in this document that is invisible in the source and obvious in the
+        # PDF. Figures 2 and 3 never had it: their in-figure text labels panels, which is a
+        # legend rather than a title and belongs where it is.
 
         return _save(fig, out_dir, "fig1-discovery-chain", formats)
 
@@ -526,8 +544,8 @@ def figure2_delegation(
         rel = data["relation"]
         total = rel["total"] or 1
         segments = [
-            ("same operator", rel["same_operator"], FILL_LIGHT, None),
-            ("cross operator", rel["cross_operator"], ACCENT, None),
+            ("same registrable domain", rel["same_operator"], FILL_LIGHT, None),
+            ("different registrable domain", rel["cross_operator"], ACCENT, None),
             ("apex unresolved", rel["unknown_operator"], FILL_MID, "///"),
         ]
         left = 0.0
@@ -561,7 +579,7 @@ def figure2_delegation(
         ax_b.plot([est["p_hat"] * 100], [y_ci], marker="o", markersize=5.5,
                   color=ACCENT, markeredgecolor=SURFACE, markeredgewidth=1.0, zorder=4)
         ax_b.text(est["p_hat"] * 100, y_ci - 0.15,
-                  f"cross-operator  {est['p_hat'] * 100:.1f}%  "
+                  f"different domain  {est['p_hat'] * 100:.1f}%  "
                   f"[{est['ci_lo'] * 100:.1f}, {est['ci_hi'] * 100:.1f}]",
                   ha="center", va="top", fontsize=6.8, color=INK)
 
@@ -782,10 +800,11 @@ def figure3_selection(
     right" -- so it is refused by construction.
 
     **The verdict is never carried by colour.** A filled marker with the accent and a bold
-    verdict word means selected; an open marker in muted ink means rejected; and the reason is
-    printed as text on the row. Three redundant channels, which is what the figure needs to
-    survive greyscale printing and photocopying, and what keeps it readable for a reader with
-    any form of colour vision deficiency.
+    verdict word means selected; an open marker in muted ink means either rejected by the
+    variance test or passed and outranked, and the row says which; and the reason is printed
+    as text on the row. Three redundant channels, which is what the figure needs to survive
+    greyscale printing and photocopying, and what keeps it readable for a reader with any form
+    of colour vision deficiency.
 
     **The bands are drawn, not described.** `[0, 2%]` and `[98%, 100%]` are shaded, so a
     candidate that sits in one is visibly in it. A reader who thinks the bands are wrong can
@@ -808,7 +827,10 @@ def figure3_selection(
         # squeezed the plot into 55% of the frame and left a band of empty page below it
         # taller than the plot itself. Reserving the column makes the geometry a decision
         # instead of a side effect of the longest label.
-        fig.subplots_adjust(left=0.155, right=0.585, top=0.97, bottom=0.36)
+        # The verdict column is annotated at x = 1.02 in axes coordinates, so the right margin
+        # is what it has to fit in. "passed, outranked" is nine characters longer than the
+        # "rejected" the layout was tuned for and ran off the canvas.
+        fig.subplots_adjust(left=0.155, right=0.525, top=0.97, bottom=0.36)
 
         # Rejection bands first, so every mark sits on top of them.
         ax.axvspan(0.0, bands["floor"], color=FILL_LIGHT, zorder=0, linewidth=0)
@@ -818,7 +840,13 @@ def figure3_selection(
         for y, row in zip(positions, rows, strict=True):
             estimate = row["estimate"]
             p_hat, lo, hi = estimate["p_hat"], estimate["ci_lo"], estimate["ci_hi"]
+            # Three states, not two. R11.2 rejects a candidate only for failing the variance
+            # test; a candidate that passes and is merely outranked has not been rejected by
+            # anything. Labelling every non-winner "rejected" put this figure in direct
+            # contradiction with the transcript beside it, which records ranks 4 and 5 as
+            # passed, while the surrounding prose claims the two cannot disagree.
             selected = row["is_headline"]
+            passed = row["passed"]
             colour = ACCENT if selected else INK_MUTED
 
             ax.plot([lo, hi], [y, y], color=colour, linewidth=1.6,
@@ -831,7 +859,12 @@ def figure3_selection(
                     markerfacecolor=colour if selected else SURFACE,
                     markeredgecolor=colour, markeredgewidth=1.4, zorder=4)
 
-            verdict = "SELECTED" if selected else "rejected"
+            if selected:
+                verdict = "SELECTED"
+            elif passed:
+                verdict = "passed, outranked"
+            else:
+                verdict = "rejected"
             ax.annotate(
                 f"{p_hat:.1%}  [{lo:.1%}, {hi:.1%}]   n={estimate['n']}  m={estimate['m']}"
                 f"   {verdict}",
@@ -862,7 +895,7 @@ def figure3_selection(
         fig.legend(
             handles=[
                 Patch(facecolor=FILL_LIGHT, edgecolor="none",
-                      label=f"R11.2 rejection bands: at or below {bands['floor']:.0%} "
+                      label=f"rejection bands: at or below {bands['floor']:.0%} "
                             f"(nobody) and at or above {bands['ceiling']:.0%} (everybody)"),
             ],
             loc="lower left", bbox_to_anchor=(0.155, 0.135), frameon=False,
@@ -874,7 +907,7 @@ def figure3_selection(
             0.155, 0.10,
             f"A candidate is also rejected if its interval is wider than "
             f"±{bands['max_half_width']:.0%}. The highest-ranked survivor leads the paper.\n"
-            f"Rank 3 is the topology, which is not a rate; R11.2 makes it the fallback when "
+            f"Rank 3 is the topology, which is not a rate; the rule makes it the fallback when "
             f"no rate qualifies.",
             ha="left", va="top", fontsize=6.8, color=INK_MUTED, linespacing=1.5,
         )
