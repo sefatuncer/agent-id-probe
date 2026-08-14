@@ -587,11 +587,20 @@ async def probe_oauth(
     # What changes is only what we *observe*. The verdicts are untouched: an endpoint that
     # neither challenged nor publishes metadata is still NOT_APPLICABLE, because
     # authorization is genuinely OPTIONAL in MCP and counting composition as failure is the
-    # error this funnel was rebuilt to avoid. C05 can still only convict an endpoint that
-    # challenged. What grows is the population carrying C12 and C13 -- the decisive checks,
-    # whose denominator is *documents we have read* rather than a posture we inferred, and
-    # which are therefore immune to this bias in a way C05 is not. In the rehearsal that
-    # population goes from 36 to roughly 64.
+    # error this funnel was rebuilt to avoid. What grows is the population carrying C12 and
+    # C13 -- the decisive checks, whose denominator is *documents we have read* rather than
+    # a posture we inferred, and which are therefore immune to this bias in a way C05 is
+    # not. In the rehearsal that population goes from 36 to roughly 64.
+    #
+    # This comment used to end "C05 can still only convict an endpoint that challenged",
+    # and that was false: only FAIL_UNIMPLEMENTED is reached through the challenge branch,
+    # while an endpoint that publishes a malformed or mismatched document is scored however
+    # it answered. The census issued 165 FAIL_MISIMPLEMENTED verdicts against endpoints that
+    # never challenged. The wider consequence is C05's denominator -- "challenged **or**
+    # published", which is circular in the direction that flatters the study, since the only
+    # way in without a challenge is by satisfying the numerator. Corrected 14 August 2026
+    # after a referee ran the instrument; `analysis.rate_by_unit(challenged_only=True)` now
+    # reports the narrower population and the manuscript leads with it.
     if ev.requires_authorization:
         # C07 - discovery hint. Strength is SHOULD until the MCP clause is confirmed, so R1
         # keeps it incapable of producing a failure either way. Only a challenge can carry

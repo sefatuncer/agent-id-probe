@@ -454,6 +454,53 @@ def figure2_data(reports: list[EndpointReport]) -> dict:
         "cross_operator_rate": cross.as_record(),
         "shared_across_apexes": len(graph.shared_across_apexes),
         "cross_check": cross_check_feasibility(reports),
+        "crossing": _crossing_ranking(graph),
+    }
+
+
+def _crossing_ranking(graph: DelegationGraph) -> dict:
+    """Issuer registrable domains ranked by the population Section 8.1 actually reads.
+
+    Panel (a) used to plot one series, the share of *all* declared edges, which Section 6.4
+    says follows from the number of distinct domains in the frame rather than from anything
+    about the market. The quantities the discussion reads -- concentration over crossing
+    delegations only -- appeared in no figure at all. Both are plotted now, on one axis, so
+    the inversion the prose describes is visible rather than asserted.
+
+    The crossing series counts one observation per declaring registrable domain, not per
+    edge, because an operator that names one issuer from eighty endpoints made one choice.
+    That is also the unit the web-centralisation comparison in Section 3.4 uses.
+    """
+    crossing_pairs: set[tuple[str, str]] = set()
+    all_by_domain: dict[str, int] = {}
+    for resource_apex, issuer in graph.edges:
+        issuer_apex = apex_domain(issuer)
+        if issuer_apex is None:
+            continue
+        all_by_domain[issuer_apex] = all_by_domain.get(issuer_apex, 0) + 1
+        if issuer_apex != resource_apex:
+            crossing_pairs.add((resource_apex, issuer_apex))
+
+    declarers: dict[str, int] = {}
+    for _, issuer_apex in crossing_pairs:
+        declarers[issuer_apex] = declarers.get(issuer_apex, 0) + 1
+
+    crossing_total = sum(declarers.values())
+    edge_total = sum(all_by_domain.values())
+    ranked = sorted(declarers.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP_K]
+    return {
+        "domains": len(declarers),
+        "declarer_choices": crossing_total,
+        "rows": [
+            {
+                "domain": domain,
+                "declarers": count,
+                "crossing_share": (count / crossing_total) if crossing_total else 0.0,
+                "all_edges_share": (all_by_domain.get(domain, 0) / edge_total)
+                if edge_total else 0.0,
+            }
+            for domain, count in ranked
+        ],
     }
 
 
@@ -494,51 +541,51 @@ def figure2_delegation(
             gridspec_kw={"width_ratios": [1.15, 1.0], "wspace": 0.42},
         )
 
-        # ---- (a) issuer concentration -------------------------------------------------
-        rows = [(_issuer_label(e["issuer"]), e["share"], e["count"]) for e in data["top_issuers"]]
-        tail = data["tail"]
-        if tail["issuers"]:
-            rows.append((f"all other issuers (n={tail['issuers']})", tail["share"], tail["count"]))
+        # ---- (a) issuer concentration, both populations --------------------------------
+        crossing = data["crossing"]
+        rows = crossing["rows"]
 
         ys = list(range(len(rows)))[::-1]
-        for y, (label, share, count) in zip(ys, rows, strict=True):
-            is_tail = label.startswith("all other issuers")
-            ax_a.barh(y, share * 100.0, height=0.68,
-                      color=FILL_LIGHT if is_tail else FILL_DARK,
-                      edgecolor=SURFACE, linewidth=1.2, zorder=3)
-            ax_a.text(share * 100.0 + 1.2, y, f"{share * 100:.1f}%  ({count})",
-                      va="center", fontsize=6.8, color=INK_MUTED, zorder=4)
+        for y, row in zip(ys, rows, strict=True):
+            ax_a.barh(y + 0.19, row["crossing_share"] * 100.0, height=0.34,
+                      color=ACCENT, edgecolor=SURFACE, linewidth=1.0, zorder=3)
+            ax_a.barh(y - 0.19, row["all_edges_share"] * 100.0, height=0.34,
+                      color=FILL_LIGHT, edgecolor=SURFACE, linewidth=1.0, zorder=3)
+            ax_a.text(row["crossing_share"] * 100.0 + 0.7, y + 0.19,
+                      f"{row['crossing_share'] * 100:.1f}%  ({row['declarers']})",
+                      va="center", fontsize=6.4, color=INK_MUTED, zorder=4)
+            ax_a.text(row["all_edges_share"] * 100.0 + 0.7, y - 0.19,
+                      f"{row['all_edges_share'] * 100:.1f}%",
+                      va="center", fontsize=6.4, color=INK_MUTED, zorder=4)
 
         ax_a.set_yticks(ys)
-        ax_a.set_yticklabels([r[0] for r in rows], fontsize=6.8)
-        ax_a.set_xlabel("share of declared resource → issuer edges (%)")
-        ax_a.set_xlim(0, max([r[1] for r in rows] + [0.0]) * 100.0 * 1.38 + 4)
+        ax_a.set_yticklabels([r["domain"] for r in rows], fontsize=6.8)
+        ax_a.set_xlabel("share of the population (%)")
+        widest = max([r["crossing_share"] for r in rows] + [0.0]) * 100.0
+        ax_a.set_xlim(0, widest * 1.42 + 3)
         ax_a.grid(axis="x", color=RULE, linewidth=0.5, alpha=0.55, zorder=0)
         ax_a.set_axisbelow(True)
         for side in ("top", "right", "left"):
             ax_a.spines[side].set_visible(False)
         ax_a.tick_params(axis="y", length=0)
 
+        # Kept short on purpose: at the full figure width the two panel titles collide,
+        # and the collision is invisible in the code and obvious in the render.
+        ax_a.set_title(f"(a)  the {crossing['domains']} issuer domains reached by crossing",
+                       loc="left", fontsize=8.0, fontweight="bold", pad=22)
+        # Above the axes, not inside them. Inside, this box sat on top of a bar and hid the
+        # largest segment in the figure behind an opaque white rectangle -- the one defect a
+        # reader could not have detected, because an occluded bar looks exactly like a
+        # short one.
         c = data["concentration"]
-        ax_a.set_title(
-            f"(a)  {data['issuers']} distinct issuers named by "
-            f"{data['declared_edges']} declarations",
-            loc="left", fontsize=8.0, fontweight="bold", pad=20)
-        if c["hhi"] is not None:
-            # Above the axes, not inside them. Inside, this box sat on top of the "all
-            # other issuers" bar and hid the largest segment in the figure behind an
-            # opaque white rectangle -- the one defect a reader could not have detected,
-            # because an occluded bar looks exactly like a short one.
-            ax_a.text(
-                0.0, 1.015,
-                f"HHI {c['hhi']:.3f}   ·   effective issuers "
-                f"{c['effective_issuers']:.1f}   ·   "
-                f"top 1 {c['top1_share'] * 100:.0f}%   ·   "
-                f"top 3 {c['top3_share'] * 100:.0f}%   ·   "
-                f"top 5 {c['top5_share'] * 100:.0f}%",
-                transform=ax_a.transAxes, ha="left", va="bottom",
-                fontsize=6.8, color=INK_MUTED,
-            )
+        ax_a.text(0.0, 1.055, f"upper: crossing only, one per declaring domain "
+                              f"(n={crossing['declarer_choices']})",
+                  transform=ax_a.transAxes, ha="left", va="bottom",
+                  fontsize=6.6, color=ACCENT)
+        ax_a.text(0.0, 1.008, f"lower: all declared edges "
+                              f"(n={data['declared_edges']}, HHI {c['hhi']:.3f})",
+                  transform=ax_a.transAxes, ha="left", va="bottom",
+                  fontsize=6.6, color=INK_MUTED)
 
         # ---- (b) who operates them ----------------------------------------------------
         rel = data["relation"]

@@ -3,7 +3,7 @@
 Endpoints run on a handful of SDKs, platforms and bulk publishers. A rate computed as
 though each endpoint were an independent draw overstates its own precision, sometimes
 severely: simulation over the shapes this corpus plausibly takes puts the real coverage of a
-nominal 95% Wilson interval between 20% and 88% (`scripts/wilson_coverage_under_clustering.py`,
+nominal 95% Wilson interval between 20% and 89% (`scripts/wilson_coverage_under_clustering.py`,
 seeded; the range was quoted as 46%-82% here and 45%-82% in R10.4 until 30 July 2026, when the
 simulation behind it was written and turned out never to have existed). R10.4 therefore forbids
 publishing a naive interval on its own, and R11.2 decides which quantity carries the paper
@@ -105,12 +105,17 @@ def student_t_ppf(p: float, df: float) -> float:
 # --- proportions --------------------------------------------------------------
 
 
-def wilson_interval(k: int, n: int, conf: float = 0.95) -> tuple[float, float]:
+def wilson_interval(k: float, n: float, conf: float = 0.95) -> tuple[float, float]:
     """The independent-observations interval.
 
     Reported only alongside a cluster-robust one (R10.4). It is here because the gap
     between the two is itself worth showing: it is the size of the mistake the paper would
     have made by treating endpoints as independent.
+
+    `k` and `n` are counts in every published use. They are typed as floats because
+    `cluster_robust_proportion` also evaluates this expression at the *effective* sample
+    size, which is not an integer, when a symmetric interval would otherwise be clamped
+    onto a boundary the data excludes.
     """
     if n <= 0:
         return (0.0, 0.0)
@@ -120,6 +125,13 @@ def wilson_interval(k: int, n: int, conf: float = 0.95) -> tuple[float, float]:
     centre = (p + z * z / (2 * n)) / denom
     half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
     return (max(0.0, centre - half), min(1.0, centre + half))
+
+
+#: Floating-point slack for comparisons between two quantities that are equal in exact
+#: arithmetic. It is a guard against the last bit and is deliberately far too small to
+#: absorb any excess a reader could interpret; the rule it serves is stated in
+#: `ProportionEstimate.n_eff_interpretable`.
+RELATIVE_EPSILON = 1e-9
 
 
 @dataclass(frozen=True)
@@ -143,10 +155,73 @@ class ProportionEstimate:
     method: str
     naive_lo: float = 0.0
     naive_hi: float = 0.0
+    # Kish's effective cluster size, sum(n_i^2) / sum(n_i). Under the exchangeable model
+    # deff = 1 + (kish - 1) * ICC with ICC <= 1, so kish * m/(m-1) is the largest design
+    # effect the cluster *sizes* alone can produce. Exceeding it is not an arithmetic
+    # error: it means the outcome depends on cluster size, with the large clusters
+    # sitting on the minority side of the rate.
+    kish: float | None = None
+    # Share of the between-cluster sum of squares carried by the single largest
+    # contributor, and that contributor's own (successes, total). When one cluster carries
+    # most of it the interval is a statement about that cluster, and the number of
+    # clusters printed beside it invites the opposite reading.
+    top_cluster_variance_share: float | None = None
+    top_cluster: tuple[int, int] | None = None
+    # The cluster-size distribution itself, which is what a reader has to see before any
+    # of the above means anything: largest, the share of observations in the ten largest,
+    # the share of clusters holding exactly one, and the coefficient of variation.
+    size_profile: dict | None = None
 
     @property
     def width(self) -> float:
         return self.hi - self.lo
+
+    @property
+    def size_outcome_ceiling(self) -> float | None:
+        """The largest design effect the cluster sizes alone can account for."""
+        if self.kish is None or self.m < 2:
+            return None
+        return self.kish * self.m / (self.m - 1)
+
+    @property
+    def n_eff_interpretable(self) -> bool:
+        """Whether `n_eff` may be printed as an effective number of observations.
+
+        `n_eff` below `m` is *not* the test, tempting as it looks: a ratio estimator
+        weights clusters by size, so a corpus with a few large clusters can genuinely
+        carry less information than an equally weighted mean over its m clusters would.
+        That case is real and the figure means what it says.
+
+        The test is whether the design effect stays inside `size_outcome_ceiling`. Above
+        it the excess comes from the largest clusters sitting on the minority side of the
+        rate, not from within-cluster homogeneity, and "as if it were n_eff independent
+        observations" is then the wrong sentence to attach to the number -- the width is
+        a statement about a handful of named clusters. The interval is unaffected; only
+        the gloss on the derived statistic is.
+        """
+        ceiling = self.size_outcome_ceiling
+        if self.deff is None or ceiling is None:
+            return True
+        # Compared against the ceiling itself, with only a floating-point guard.
+        #
+        # Until 14 August 2026 this read `<= ceiling * 1.10`, on the reasoning that the
+        # identity is exact only for equal cluster sizes so a marginal excess is not
+        # evidence of anything. The reasoning is defensible and the constant was still
+        # wrong to keep: Section 4.5 states the criterion as a bright line and reports the
+        # count of intervals failing it as machine-derived, so a free parameter no reader
+        # could see was setting that count. It was setting it here too. C05 at the endpoint
+        # unit sits at 10.71 against a ceiling of 10.62 and went unflagged for that reason
+        # alone, while one cluster carries 57% of its between-cluster sum of squares, which
+        # is the condition the flag exists to announce.
+        #
+        # The guard that remains is numerical and nothing else. Where the cluster is the
+        # unit, DEFF and the ceiling are the same quantity -- both reduce to m / (m - 1) --
+        # and they agree to about fifteen digits rather than exactly, so a bare `<=` flags
+        # or spares those rows by the accident of the last bit. It did: of the eight rows a
+        # zero-tolerance rule marked, five were collapsed-unit rows agreeing to four decimal
+        # places, and two otherwise identical rows fell on opposite sides. RELATIVE_EPSILON
+        # is far below any excess that could carry meaning and far above float noise.
+        return self.deff <= ceiling * (1.0 + RELATIVE_EPSILON)
 
     def as_record(self) -> dict:
         return {
@@ -154,6 +229,12 @@ class ProportionEstimate:
             "p_hat": self.p_hat, "ci_lo": self.lo, "ci_hi": self.hi,
             "deff": self.deff, "n_eff": self.n_eff, "method": self.method,
             "naive_ci_lo": self.naive_lo, "naive_ci_hi": self.naive_hi,
+            "kish": self.kish,
+            "size_outcome_ceiling": self.size_outcome_ceiling,
+            "top_cluster_variance_share": self.top_cluster_variance_share,
+            "top_cluster": list(self.top_cluster) if self.top_cluster else None,
+            "size_profile": self.size_profile,
+            "n_eff_interpretable": self.n_eff_interpretable,
         }
 
 
@@ -162,13 +243,31 @@ def cluster_robust_proportion(
 ) -> ProportionEstimate:
     """Proportion with a cluster-robust interval, t(m-1)-based per R10.4.
 
-    `clusters` is one (successes, total) pair per cluster. The t quantile rather than z is
-    not pedantry: with a dozen platforms the difference is the difference between an
-    interval that covers and one that does not.
+    `clusters` is one (successes, total) pair per cluster. The estimator is the linearised
+    variance of a ratio over clusters,
+
+        V_cl = m / ((m - 1) * N^2) * sum_i (k_i - p_hat * n_i)^2,   N = sum_i n_i
+
+    against the simple-random-sample variance V_srs = p(1 - p) / N, with
+
+        DEFF = V_cl / V_srs,    n_eff = N / DEFF.
+
+    The t quantile rather than z is not pedantry: with a dozen platforms the difference is
+    the difference between an interval that covers and one that does not.
 
     Note that clustering does not only widen. When the property is spread evenly across
     clusters the design effect falls below 1 and the interval is *narrower* than the naive
     one. That is why this is a measurement rather than a safety margin.
+
+    Two properties of the ratio are reported alongside it because reading DEFF without
+    them is what produced a published "effective sample size" of 123 over 1,814 clusters.
+    `kish` is sum(n_i^2) / N, the largest design effect the cluster sizes can generate,
+    since DEFF = 1 + (kish - 1) * ICC and ICC <= 1. `top_cluster_variance_share` is how
+    much of the sum of squares the single largest contributor carries. When DEFF exceeds
+    `kish` the ratio is describing one dominant cluster rather than within-cluster
+    homogeneity, `n_eff_interpretable` is False, and n_eff must not be printed as a
+    sample size. The interval itself stands: one apex declaring eighty issuers really can
+    move a rate, and saying so is the correction's whole purpose.
     """
     m = len(clusters)
     total = sum(n for _, n in clusters)
@@ -177,15 +276,33 @@ def cluster_robust_proportion(
         return ProportionEstimate(0, 0, m, 0.0, 0.0, 0.0, None, None, "empty")
     p_hat = successes / total
     naive = wilson_interval(successes, total, conf)
+    kish = sum(n * n for _, n in clusters) / total
+    sizes = sorted((n for _, n in clusters), reverse=True)
+    mean_size = total / m
+    size_profile = {
+        "max": sizes[0],
+        "top10_share": sum(sizes[:10]) / total,
+        "singleton_share": sum(1 for x in sizes if x == 1) / m,
+        "cv": (math.sqrt(sum((x - mean_size) ** 2 for x in sizes) / m) / mean_size
+               if mean_size else 0.0),
+    }
 
     if m < 2:
         return ProportionEstimate(
             successes, total, m, p_hat, naive[0], naive[1], None, None,
             "wilson (single cluster: no between-cluster variance to estimate)",
-            naive[0], naive[1],
+            naive[0], naive[1], kish, 1.0, clusters[0] if clusters else None,
+            size_profile,
         )
 
-    ssq = sum((k - p_hat * n) ** 2 for k, n in clusters)
+    contributions = [(k - p_hat * n) ** 2 for k, n in clusters]
+    ssq = sum(contributions)
+    top_share: float | None = None
+    top_cluster: tuple[int, int] | None = None
+    if ssq > 0:
+        worst = max(range(m), key=contributions.__getitem__)
+        top_share = contributions[worst] / ssq
+        top_cluster = clusters[worst]
     var = m / ((m - 1) * total**2) * ssq
     simple_var = p_hat * (1 - p_hat) / total
 
@@ -214,8 +331,32 @@ def cluster_robust_proportion(
     method = f"cluster-robust t({m - 1})"
     if floored:
         method += " (floored at the simple-random-sample variance)"
+
+    # A symmetric interval around a proportion near a boundary is clamped into [0, 1]
+    # afterwards, and the clamp then prints a bound the data excludes: nine successes in
+    # 202 observations were published as "[0.0%, 9.0%]", which asserts that none of them
+    # may have happened. Where the clamp binds and the count is neither 0 nor n, the
+    # published interval becomes Wilson evaluated at the effective sample size -- which is
+    # boundary-respecting by construction and still carries the clustering correction,
+    # rather than dropping it to rescue the bound. The substitution is recorded in
+    # `method` so a reader can see which figures it touched.
+    if (lo == 0.0 or hi == 1.0) and 0 < successes < total and deff and deff > 0:
+        # Not rounded to integers: with a large design effect the effective successes can
+        # fall below 0.5, and rounding them to zero would hand back the very bound this
+        # replaces. Wilson's expression is continuous in both arguments.
+        #
+        # The divisor is floored at one for the same reason the variance is. A design
+        # effect below one means the clustering happens to have produced a spread narrower
+        # than simple random sampling would, and dividing by it would evaluate Wilson at
+        # *more* observations than were collected -- manufacturing precision no sample of
+        # this size could have, which is exactly what the floor above exists to forbid. The
+        # published `deff` still reports the raw ratio; only the substitution is floored.
+        lo, hi = wilson_interval(successes / max(deff, 1.0), total / max(deff, 1.0), conf)
+        method += "; boundary-respecting Wilson at the effective sample size"
+
     return ProportionEstimate(
         successes, total, m, p_hat, lo, hi, deff, n_eff, method, naive[0], naive[1],
+        kish, top_share, top_cluster, size_profile,
     )
 
 
@@ -299,7 +440,24 @@ def _collapse_to_one_per(reports: list, unit: str) -> list:
     return list(chosen.values())
 
 
-def rate_by_unit(reports: list, check_id, unit: str, conf: float = 0.95) -> ProportionEstimate:
+#: The only two answers that are an authorization challenge. RFC 9728 3.1 hangs the
+#: metadata requirement on the challenge, so this is the population C05's specification
+#: sentence actually addresses.
+CHALLENGE_STATUSES = (401, 403)
+
+
+def challenged(report) -> bool:
+    """Did this endpoint answer with an authorization challenge?
+
+    Kept separate from `OAuthEvidence.requires_authorization` on purpose: that field is
+    set during scoring and is not what a reader can check, whereas the first response's
+    status code is in every stored report and in every raw artefact.
+    """
+    return report.http_status in CHALLENGE_STATUSES
+
+
+def rate_by_unit(reports: list, check_id, unit: str, conf: float = 0.95,
+                 challenged_only: bool = False) -> ProportionEstimate:
     """One check's pass rate with `unit` as the unit of analysis.
 
     The denominator follows the funnel rules rather than counting every report. Four
@@ -324,12 +482,24 @@ def rate_by_unit(reports: list, check_id, unit: str, conf: float = 0.95) -> Prop
     not independent. For the apex and implementation units the population is collapsed
     first, which moves the point estimate too — and the gap between the two is the finding
     a single number would hide.
+
+    `challenged_only` narrows the population to endpoints that answered 401 or 403. It
+    exists because the rules above do not produce the denominator the manuscript claimed
+    for C05. An endpoint that never challenged and published nothing leaves as
+    NOT_APPLICABLE, but one that never challenged and *did* publish is scored, so the
+    denominator is "challenged **or** published" — which is the widening Section 6.1 said
+    it had avoided, and it is circular in the direction that flatters the study, since the
+    only way in without a challenge is by satisfying the numerator. Found on 14 August 2026
+    by a referee who ran the instrument rather than reading it; 1,375 of C05's 2,976
+    endpoints, 46.2%, had not challenged. Both populations are now reported, this one as
+    the primary and the wider one as a declared sensitivity arm.
     """
     from .models import Outcome
 
     applicable = [
         r for r in reports
         if r.robots_allowed and not r.opted_out and not r.crossed_origin()
+        and (not challenged_only or challenged(r))
         and (o := r.outcome_of(check_id)) is not None
         and o not in (Outcome.NOT_APPLICABLE, Outcome.ERROR, Outcome.UNSPECIFIED)
     ]
@@ -347,7 +517,136 @@ def rate_by_unit(reports: list, check_id, unit: str, conf: float = 0.95) -> Prop
     return cluster_robust_proportion([(k, n) for k, n in buckets.values()], conf)
 
 
-def three_unit_table(reports: list, check_id, conf: float = 0.95) -> dict[str, dict]:
+def denominator_composition(reports: list, check_id) -> dict:
+    """What a check's denominator is actually made of, by first-response status.
+
+    A rate is only as honest as the population under it, and for C05 the two were not the
+    same thing: the manuscript described the denominator as endpoints that answered an
+    authorization challenge and it was not that. Printing the composition is the cheapest
+    guard against the same class of error, because a reader can see the population instead
+    of taking its description on trust.
+
+    Returns the whole denominator, the challenging and non-challenging halves, and a
+    per-status breakdown, each with its own pass count.
+    """
+    from .models import Outcome
+
+    applicable = [
+        r for r in reports
+        if r.robots_allowed and not r.opted_out and not r.crossed_origin()
+        and (o := r.outcome_of(check_id)) is not None
+        and o not in (Outcome.NOT_APPLICABLE, Outcome.ERROR, Outcome.UNSPECIFIED)
+    ]
+    by_status: dict[str, list[int]] = {}
+    for report in applicable:
+        bucket = by_status.setdefault(str(report.http_status), [0, 0])
+        bucket[1] += 1
+        if report.outcome_of(check_id) is Outcome.PASS:
+            bucket[0] += 1
+
+    def half(predicate) -> dict:
+        rows = [r for r in applicable if predicate(r)]
+        k = sum(1 for r in rows if r.outcome_of(check_id) is Outcome.PASS)
+        return {"n": len(rows), "k": k, "rate": (k / len(rows)) if rows else None}
+
+    total = half(lambda r: True)
+    return {
+        "total": total,
+        "challenged": half(challenged),
+        "not_challenged": half(lambda r: not challenged(r)),
+        "by_status": {s: {"n": n, "k": k, "rate": k / n}
+                      for s, (k, n) in sorted(by_status.items(),
+                                              key=lambda kv: -kv[1][1])},
+        # How much of the denominator is there without having answered a challenge. The
+        # manuscript's description of the population is only true when this is zero.
+        "not_challenged_share": (total["n"] - half(challenged)["n"]) / total["n"]
+        if total["n"] else None,
+    }
+
+
+def challenge_share(reports: list, check_id) -> dict:
+    """How many endpoints in a check's arm answered an authorization challenge.
+
+    Separate from `denominator_composition` because the base is different: this counts
+    over every endpoint the arm reached, not over the check's denominator. Section 6.1
+    presented C05's denominator, 33.5% of the corpus, as the endpoints that "opted into
+    authorization at all"; the share that actually challenged is this number, and the
+    Zhou et al. comparison bracket was built on the first where it meant the second.
+    """
+    arm = [r for r in reports if r.outcome_of(check_id) is not None]
+    n_challenged = sum(1 for r in arm if challenged(r))
+    return {
+        "arm": len(arm),
+        "challenged": n_challenged,
+        "share": (n_challenged / len(arm)) if arm else None,
+    }
+
+
+def sampling_bias(reports: list, check_id, not_sampled_by_host: dict[str, int],
+                  cap: int) -> dict:
+    """What the per-host cap costs the endpoint-unit rate, measured rather than asserted.
+
+    Section 9.6 claimed the sampling bias has "a known sign" and gave no number, in a
+    sentence whose own reasoning said the opposite -- an uncapped rate would be pulled
+    toward "whatever a handful of large platforms happen to do" is a statement that the
+    direction depends on facts nobody had looked up. They are lookable-up: the endpoints
+    measured on a capped host are a deterministic selection by identifier, so under the
+    assumption that they are exchangeable with their host's unmeasured remainder, each one
+    stands for `frame / measured` of that host and the uncapped rate can be estimated.
+
+    The assumption is the whole of what this rests on and it is not testable from inside a
+    capped host, since the remainder was never asked. It is stated in the manuscript beside
+    the number.
+    """
+    from urllib.parse import urlsplit
+
+    from .models import Outcome
+
+    applicable = [
+        r for r in reports
+        if r.robots_allowed and not r.opted_out and not r.crossed_origin()
+        and (o := r.outcome_of(check_id)) is not None
+        and o not in (Outcome.NOT_APPLICABLE, Outcome.ERROR, Outcome.UNSPECIFIED)
+    ]
+    measured: dict[str, list[int]] = {}
+    for report in applicable:
+        host = urlsplit(report.endpoint.url).hostname or ""
+        bucket = measured.setdefault(host, [0, 0])
+        bucket[1] += 1
+        if report.outcome_of(check_id) is Outcome.PASS:
+            bucket[0] += 1
+
+    published_k = sum(k for k, _ in measured.values())
+    published_n = sum(n for _, n in measured.values())
+    weighted_k = weighted_n = 0.0
+    capped_k = capped_n = 0
+    for host, (k, n) in measured.items():
+        dropped = not_sampled_by_host.get(host, 0)
+        # The frame holds the endpoints the cap admitted plus the ones it dropped. Only
+        # those admitted and applicable are in `n`, so the weight is per applicable
+        # observation rather than per admitted one.
+        weight = (cap + dropped) / cap if dropped else 1.0
+        weighted_k += k * weight
+        weighted_n += n * weight
+        if dropped:
+            capped_k += k
+            capped_n += n
+
+    uncapped_k = published_k - capped_k
+    uncapped_n = published_n - capped_n
+    return {
+        "published_rate": published_k / published_n if published_n else None,
+        "reweighted_rate": weighted_k / weighted_n if weighted_n else None,
+        "capped_rate": capped_k / capped_n if capped_n else None,
+        "uncapped_rate": uncapped_k / uncapped_n if uncapped_n else None,
+        "capped_n": capped_n,
+        "uncapped_n": uncapped_n,
+        "capped_hosts_measured": sum(1 for h in measured if not_sampled_by_host.get(h)),
+    }
+
+
+def three_unit_table(reports: list, check_id, conf: float = 0.95,
+                     challenged_only: bool = False) -> dict[str, dict]:
     """R10.1: no rate is published as a single number.
 
     "8% of 1,700 endpoints" and "8% across 34 implementations" are different claims, and a
@@ -355,7 +654,8 @@ def three_unit_table(reports: list, check_id, conf: float = 0.95) -> dict[str, d
     page. Most of the objection that endpoints are not independent is answered by this
     table alone, without any modelling.
     """
-    return {unit: rate_by_unit(reports, check_id, unit, conf).as_record() for unit in UNITS}
+    return {unit: rate_by_unit(reports, check_id, unit, conf, challenged_only).as_record()
+            for unit in UNITS}
 
 
 # --- the declared trust graph (R11.1 candidate 3) ------------------------------
@@ -487,6 +787,47 @@ def build_delegation_graph(reports: list) -> DelegationGraph:
         unknown_operator=unknown,
         shared_across_apexes=sorted(multi_tenant),
     )
+
+
+def fisher_exact_2x2(a: int, b: int, c: int, d: int) -> dict:
+    """Two-sided Fisher's exact test for [[a, b], [c, d]].
+
+    Written out rather than imported because this module is stdlib-only by design, and a
+    2x2 exact test is a sum over one hypergeometric row.
+
+    It exists because Section 6.5 asserted a contrast it had never tested. All 12 issuers
+    publishing the protected-resources field sit outside the crossing population and none
+    inside it, and the manuscript read that as the two populations partitioning. With 12
+    positives spread over about two thousand issuers, a crossing subset of two hundred
+    containing none of them is roughly what independence predicts, so the partition was
+    evidence of the base rate rather than of any association. The level -- the mitigation is
+    close to absent everywhere -- survives; the contrast does not.
+    """
+    from math import comb
+
+    row1, row2 = a + b, c + d
+    col1 = a + c
+    total = row1 + row2
+    if not row1 or not row2 or not col1 or not (b + d):
+        return {"a": a, "b": b, "c": c, "d": d, "p_value": None,
+                "method": "undefined: a margin is empty"}
+
+    def prob(k: int) -> float:
+        return comb(row1, k) * comb(row2, col1 - k) / comb(total, col1)
+
+    observed = prob(a)
+    # Floating point makes equally extreme tables compare unequal, which would drop the
+    # mirror-image table out of the tail and halve the p-value.
+    tolerance = observed * (1 + 1e-9)
+    p = sum(prob(k) for k in range(max(0, col1 - row2), min(row1, col1) + 1)
+            if prob(k) <= tolerance)
+    return {
+        "a": a, "b": b, "c": c, "d": d,
+        "p_value": min(1.0, p),
+        "rate_row1": a / row1,
+        "rate_row2": c / row2,
+        "method": "two-sided Fisher exact, hypergeometric point probabilities",
+    }
 
 
 def cross_check_feasibility(reports: list) -> dict:
@@ -811,6 +1152,75 @@ def exposure_analysis(reports: list, conf: float = 0.95) -> dict:
         from urllib.parse import urlsplit
         return urlsplit(issuer).hostname
 
+    # -- the same concentration with one observation per declaring apex -------------------
+    #
+    # The published crossing-edge figures count one observation per edge, and a single apex
+    # declaring the same issuer from eighty endpoints therefore contributes eighty. That is
+    # not the shape of the web-centralisation result the discussion compares against, which
+    # counts one observation per site. Here each (declaring apex, issuer domain) pair counts
+    # once, which is the comparable construction.
+    def _concentration_per_declarer(edges: list, key) -> dict:
+        pairs = {(resource_apex, key(issuer)) for resource_apex, issuer in edges
+                 if key(issuer) is not None}
+        counts: dict[str, int] = {}
+        for _, identifier in pairs:
+            counts[identifier] = counts.get(identifier, 0) + 1
+        total = sum(counts.values())
+        if total == 0:
+            return {"issuers": 0, "hhi": None, "top1_share": None, "top10_share": None}
+        shares = sorted((c / total for c in counts.values()), reverse=True)
+        hhi = sum(s * s for s in shares)
+        declarers = {resource_apex for resource_apex, _ in pairs}
+        largest = max(counts.items(), key=lambda kv: kv[1])
+        return {
+            "issuers": len(counts), "pairs": total, "hhi": hhi,
+            "top1_share": shares[0], "top3_share": sum(shares[:3]),
+            "top10_share": sum(shares[:10]),
+            "declarers": len(declarers),
+            # The quantity Kumar et al. report: the share of sites relying on the single
+            # largest provider. Ours is the share of declaring apexes, which is the same
+            # construction at the same unit.
+            "largest_provider": largest[0],
+            "largest_provider_declarers": largest[1],
+            "largest_provider_declarer_share": largest[1] / len(declarers),
+        }
+
+    # -- how far one declaring apex reaches into the issuer population --------------------
+    #
+    # An edge count and an issuer count are different quantities and the manuscript printed
+    # both without distinguishing them, which invites the reading that the apex declaring
+    # eighty crossing edges also contributes eighty of the crossing issuers. It does not:
+    # those eighty edges are eighty endpoints naming one issuer. Measured rather than
+    # argued, because the inference is reasonable and wrong.
+    issuers_by_declarer: dict[str, set] = {}
+    for resource_apex, issuer in crossing_edges:
+        issuers_by_declarer.setdefault(resource_apex, set()).add(issuer)
+    dominant_declarer, dominant_issuers = (
+        max(issuers_by_declarer.items(), key=lambda kv: len(kv[1]))
+        if issuers_by_declarer else (None, set())
+    )
+    # Issuers no other apex declares: removing the dominant declarer removes exactly these.
+    sole = {i for i in dominant_issuers
+            if all(ra == dominant_declarer for ra, j in crossing_edges if j == i)}
+    remaining_docs = {i: d for i, d in crossing_docs.items() if i not in sole}
+
+    # -- does the crossing population differ, or only look as though it does? -------------
+    #
+    # Section 6.5 called the split between the two populations "the sharpest way to state
+    # the result" and never tested it. The test is a 2x2 over the issuers whose metadata was
+    # actually retrieved, because an issuer that was never reached can be on neither side of
+    # a comparison about what issuers publish.
+    def _contingency(predicate) -> dict:
+        observed = {i: d for i, d in documents.items() if d}
+        rows = {"crossing": [0, 0], "other": [0, 0]}
+        for issuer, document in observed.items():
+            row = rows["crossing" if issuer in crossing_issuers else "other"]
+            row[1] += 1
+            if predicate(document):
+                row[0] += 1
+        (ck, cn), (ok, on) = rows["crossing"], rows["other"]
+        return fisher_exact_2x2(ck, cn - ck, ok, on - ok)
+
     units = {"url": lambda i: i, "host": _host, "registrable_domain": _apex}
     return {
         "declaring_endpoints": declaring_endpoints,
@@ -823,12 +1233,46 @@ def exposure_analysis(reports: list, conf: float = 0.95) -> dict:
         "c18_crossing": _rate(_publishes_protected_resources, crossing_docs),
         "c16_all": _rate(_advertises_iss, documents),
         "c18_all": _rate(_publishes_protected_resources, documents),
+        "c18_crossing_contrast": _contingency(_publishes_protected_resources),
+        "c16_crossing_contrast": _contingency(_advertises_iss),
         "concentration_by_unit": {
             name: _concentration(graph.edges, key) for name, key in units.items()
         },
         "concentration_crossing": {
             name: _concentration(crossing_edges, key) for name, key in units.items()
         },
+        "concentration_crossing_per_declarer": {
+            name: _concentration_per_declarer(crossing_edges, key)
+            for name, key in units.items()
+        },
+        "dominant_declarer": {
+            "apex": dominant_declarer,
+            "edges": sum(1 for ra, _ in crossing_edges if ra == dominant_declarer),
+            "issuers": len(dominant_issuers),
+            "sole_issuers": len(sole),
+            "issuer_share": (len(dominant_issuers) / len(crossing_issuers)
+                             if crossing_issuers else None),
+        },
+        # The apex carrying the most crossing *declarations*, which is a different apex from
+        # the one above and a different quantity from the one Section 6.4 named. That
+        # sentence read "one apex declares 80 issuers"; the eighty are declarations, and
+        # they name one issuer between them. The distinction is the whole difference between
+        # a bulk publisher's single choice and eighty independent ones.
+        "top_edge_declarer": (
+            {
+                "apex": top_edge_apex,
+                "edges": len([1 for ra, _ in crossing_edges if ra == top_edge_apex]),
+                "issuers": len({i for ra, i in crossing_edges if ra == top_edge_apex}),
+                "edge_share": len([1 for ra, _ in crossing_edges if ra == top_edge_apex])
+                / len(crossing_edges),
+            }
+            if (top_edge_apex := (
+                max(({ra for ra, _ in crossing_edges}),
+                    key=lambda a: sum(1 for r, _ in crossing_edges if r == a))
+                if crossing_edges else None)) else {}
+        ),
+        "c18_crossing_ex_dominant": _rate(_publishes_protected_resources, remaining_docs),
+        "c16_crossing_ex_dominant": _rate(_advertises_iss, remaining_docs),
     }
 
 
@@ -1113,6 +1557,20 @@ def analyse(reports: list, conf: float = 0.95) -> dict:
             for check in (CheckId.PRM_PRESENT, CheckId.PRM_RESOURCE_IDENTITY_MATCH,
                           CheckId.AS_CORRESPONDENCE)
         },
+        # C05 restricted to the population its specification sentence addresses. The wider
+        # denominator above admits any endpoint that published, challenge or not, which is
+        # the circularity Section 6.1 undertook to avoid and did not; both are published so
+        # the cost of the choice is visible rather than argued.
+        "three_unit_challenged": {
+            CheckId.PRM_PRESENT.value: three_unit_table(
+                reports, CheckId.PRM_PRESENT, conf, challenged_only=True),
+        },
+        "denominator_composition": {
+            check.value: denominator_composition(reports, check)
+            for check in (CheckId.PRM_PRESENT, CheckId.PRM_RESOURCE_IDENTITY_MATCH,
+                          CheckId.AS_CORRESPONDENCE)
+        },
+        "challenge_share": challenge_share(reports, CheckId.PRM_PRESENT),
         "issuers": {
             "declared": len(issuer_documents(reports, "declared")),
             "observed": len(issuer_documents(reports, "observed")),

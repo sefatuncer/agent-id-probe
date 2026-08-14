@@ -5,9 +5,25 @@
   "nominal_coverage": 0.95,
   "quoted_range": [
     0.2,
-    0.88
+    0.89
   ],
-  "note": "Real coverage of a nominal 95% Wilson interval when endpoints are clustered. The `quoted_range` bounds are what analysis.py's docstring and decision rule R10.4 are permitted to state; tests/test_analysis.py enforces the match. Regenerate with scripts/wilson_coverage_under_clustering.py --write.",
+  "published_estimator_range": [
+    0.69,
+    0.97
+  ],
+  "wilson_at_neff_range": [
+    0.73,
+    0.95
+  ],
+  "wilson_at_neff_range_boundary": [
+    0.73,
+    0.95
+  ],
+  "cluster_robust_range_boundary": [
+    0.69,
+    0.97
+  ],
+  "note": "Real coverage of three nominal 95% intervals when endpoints are clustered: the naive Wilson interval, the cluster-robust t interval this study publishes, and Wilson evaluated at the effective sample size, which the boundary rule substitutes when a symmetric interval would clamp. `quoted_range` covers the first seven scenarios only and is what analysis.py's docstring and decision rule R10.4 are permitted to state; tests/test_analysis.py enforces the match. Regenerate with scripts/wilson_coverage_under_clustering.py --write.",
   "scenarios": [
     {
       "scenario": "few large clusters, full agreement",
@@ -16,7 +32,9 @@
       "zipf_exponent": 1.4,
       "rho": 1.0,
       "propensity": 0.5,
-      "naive_wilson_coverage": 0.6515
+      "naive_wilson_coverage": 0.6515,
+      "cluster_robust_coverage": 0.889,
+      "wilson_at_neff_coverage": 0.9065
     },
     {
       "scenario": "few large clusters, partial agreement",
@@ -25,7 +43,9 @@
       "zipf_exponent": 1.4,
       "rho": 0.5,
       "propensity": 0.5,
-      "naive_wilson_coverage": 0.8788
+      "naive_wilson_coverage": 0.8788,
+      "cluster_robust_coverage": 0.9267,
+      "wilson_at_neff_coverage": 0.929
     },
     {
       "scenario": "many clusters, full agreement",
@@ -34,7 +54,9 @@
       "zipf_exponent": 1.1,
       "rho": 1.0,
       "propensity": 0.5,
-      "naive_wilson_coverage": 0.2013
+      "naive_wilson_coverage": 0.2013,
+      "cluster_robust_coverage": 0.8802,
+      "wilson_at_neff_coverage": 0.8962
     },
     {
       "scenario": "many clusters, partial agreement",
@@ -43,7 +65,9 @@
       "zipf_exponent": 1.1,
       "rho": 0.5,
       "propensity": 0.5,
-      "naive_wilson_coverage": 0.3935
+      "naive_wilson_coverage": 0.3935,
+      "cluster_robust_coverage": 0.9008,
+      "wilson_at_neff_coverage": 0.9028
     },
     {
       "scenario": "heavy tail, full agreement",
@@ -52,7 +76,9 @@
       "zipf_exponent": 1.8,
       "rho": 1.0,
       "propensity": 0.5,
-      "naive_wilson_coverage": 0.7418
+      "naive_wilson_coverage": 0.7418,
+      "cluster_robust_coverage": 0.9277,
+      "wilson_at_neff_coverage": 0.9325
     },
     {
       "scenario": "rate near the edge, full agreement",
@@ -61,7 +87,9 @@
       "zipf_exponent": 1.1,
       "rho": 1.0,
       "propensity": 0.9,
-      "naive_wilson_coverage": 0.2218
+      "naive_wilson_coverage": 0.2218,
+      "cluster_robust_coverage": 0.7532,
+      "wilson_at_neff_coverage": 0.8055
     },
     {
       "scenario": "rate near the edge, heavy tail",
@@ -70,7 +98,42 @@
       "zipf_exponent": 1.8,
       "rho": 1.0,
       "propensity": 0.9,
-      "naive_wilson_coverage": 0.736
+      "naive_wilson_coverage": 0.736,
+      "cluster_robust_coverage": 0.8682,
+      "wilson_at_neff_coverage": 0.9055
+    },
+    {
+      "scenario": "boundary-adjacent rate, heavy tail",
+      "clusters": 82,
+      "n": 135,
+      "zipf_exponent": 1.8,
+      "rho": 1.0,
+      "propensity": 0.045,
+      "naive_wilson_coverage": 0.762,
+      "cluster_robust_coverage": 0.901,
+      "wilson_at_neff_coverage": 0.8815
+    },
+    {
+      "scenario": "boundary-adjacent rate, partial",
+      "clusters": 82,
+      "n": 135,
+      "zipf_exponent": 1.8,
+      "rho": 0.5,
+      "propensity": 0.045,
+      "naive_wilson_coverage": 0.8872,
+      "cluster_robust_coverage": 0.9685,
+      "wilson_at_neff_coverage": 0.9403
+    },
+    {
+      "scenario": "boundary-adjacent rate, many clusters",
+      "clusters": 200,
+      "n": 828,
+      "zipf_exponent": 1.1,
+      "rho": 1.0,
+      "propensity": 0.045,
+      "naive_wilson_coverage": 0.2883,
+      "cluster_robust_coverage": 0.69,
+      "wilson_at_neff_coverage": 0.739
     }
   ]
 }

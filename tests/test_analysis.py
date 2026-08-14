@@ -480,9 +480,9 @@ def test_the_published_wilson_coverage_range_is_what_the_simulation_produced():
 
     # And the prose must quote that range. These two literals are the only place the numbers
     # are written by hand, and they are what a reviewer reads.
-    assert (low, high) == (0.20, 0.88), (
+    assert (low, high) == (0.20, 0.89), (
         f"docs/wilson-coverage.json says {low:.0%}-{high:.0%}; analysis.py's docstring and "
-        f"decision rule R10.4 say 20%-88%. Update the prose, or explain the new simulation."
+        f"decision rule R10.4 say 20%-89%. Update the prose, or explain the new simulation."
     )
     assert data["nominal_coverage"] == 0.95
 

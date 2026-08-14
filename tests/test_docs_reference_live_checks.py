@@ -41,12 +41,12 @@ CHECK_TOKEN = re.compile(r"\bC(\d{2})\b")
 # Words that turn a mention into a statement about the past. A line carrying one of these is
 # talking about the instrument's history, which the amendment log must be free to do.
 #
-# Turkish as well as English: `phase0-findings.md` is the pilot record and is written in
-# Turkish, and a guard that only reads one of the two languages this repository documents
-# itself in would pass that file by never understanding it.
+# English only, as of 13 August 2026. `phase0-findings.md` was the one Turkish document under
+# `docs/` and was translated on that date, so the Turkish retirement words this tuple used to
+# carry now match nothing. They are removed rather than left as decoration: a guard listing
+# tokens that cannot occur reads as though it is checking something it is not.
 RETIREMENT_WORDS = ("delete", "deleted", "removed", "remove", "withdrawn", "retired",
-                    "no longer", "dropped", "cut",
-                    "silindi", "kaldırıldı", "çıkarıldı", "düşürüldü", "kesildi")
+                    "no longer", "dropped", "cut")
 
 LIVE = {check.value for check in CheckId}
 
