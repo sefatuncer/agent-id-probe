@@ -1276,6 +1276,60 @@ def exposure_analysis(reports: list, conf: float = 0.95) -> dict:
     }
 
 
+def identifier_comparison_sensitivity(reports: list) -> dict:
+    """What the identifier checks report under three readings of "identical".
+
+    RFC 8414 Section 4 asks for equality code point by code point and RFC 9728 Section 3.3
+    for identity, while the instrument applies the equivalences RFC 3986 Section 6.2 itself
+    declares before comparing: case-insensitive scheme and host, default port elided, empty
+    path equal to a bare slash. Whether that is conformance testing or forgiveness is the
+    ambiguity catalogued as U4, and it was never quantified. A reading that changes the
+    conclusion would be a finding; a reading that does not closes the objection.
+
+    Three readings over the same stored evidence: byte-for-byte with no normalisation, the
+    published rule, and the case-insensitivity RFC 3986 makes mandatory without the port or
+    path equivalences. Denominators here are evidence pairs rather than funnel populations,
+    so the rates are not the published C12 and C13 figures and are not comparable to them;
+    what is comparable is the three readings against each other.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    from .checks_oauth import canonical_resource_identifier
+
+    def scheme_host_only(url: str) -> str:
+        parts = urlsplit(url)
+        return urlunsplit((parts.scheme.lower(), parts.netloc.lower(),
+                           parts.path, parts.query, parts.fragment))
+
+    readings = {
+        "strict": lambda u: u,
+        "published": canonical_resource_identifier,
+        "scheme_host_case": scheme_host_only,
+    }
+    out: dict[str, dict] = {}
+    for name, normalise in readings.items():
+        resource_n = resource_k = issuer_n = issuer_k = 0
+        for report in reports:
+            evidence = report.evidence or {}
+            declared = evidence.get("declared_resource")
+            expected = evidence.get("expected_resource")
+            if declared and expected:
+                resource_n += 1
+                resource_k += normalise(declared) == normalise(expected)
+            for issuer, document in (evidence.get("as_documents") or {}).items():
+                claimed = (document or {}).get("issuer")
+                if claimed:
+                    issuer_n += 1
+                    issuer_k += normalise(claimed) == normalise(issuer)
+        out[name] = {
+            "resource_match": resource_k, "resource_total": resource_n,
+            "resource_rate": (resource_k / resource_n) if resource_n else None,
+            "issuer_match": issuer_k, "issuer_total": issuer_n,
+            "issuer_rate": (issuer_k / issuer_n) if issuer_n else None,
+        }
+    return out
+
+
 def unreachable_composition(reports: list) -> dict:
     """What is actually inside the unobserved fraction Section 9.2 bounds.
 
