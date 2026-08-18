@@ -238,6 +238,23 @@ class ProportionEstimate:
         }
 
 
+def one_sided_bound(n: float, conf: float = 0.95) -> float:
+    """The rule of three: the largest rate consistent with observing none in `n` trials.
+
+    Written on 18 August 2026. Four bounds in the manuscript were of this form and every one
+    of them was arithmetic done outside the instrument, which is the position the paper spends
+    its method section arguing against. `1 - (1 - conf)^(1/n)` is the exact binomial answer
+    rather than the 3/n approximation, because n is small enough here for the difference to
+    show and there is no reason to approximate a closed form.
+
+    `n` is a float on purpose: where clustering is corrected for, the bound is evaluated at
+    the effective sample size, which is not an integer.
+    """
+    if n <= 0:
+        return 1.0
+    return 1.0 - (1.0 - conf) ** (1.0 / n)
+
+
 def cluster_robust_proportion(
     clusters: list[tuple[int, int]], conf: float = 0.95
 ) -> ProportionEstimate:
@@ -353,6 +370,18 @@ def cluster_robust_proportion(
         # published `deff` still reports the raw ratio; only the substitution is floored.
         lo, hi = wilson_interval(successes / max(deff, 1.0), total / max(deff, 1.0), conf)
         method += "; boundary-respecting Wilson at the effective sample size"
+
+    # The count *on* the boundary is the case the rule above excludes, and it produced the
+    # one interval this module's own documentation forbids: zero successes gave [0, 0],
+    # which reads as a measurement of exactly none rather than as the absence of a
+    # measurement. The guard existed on the bootstrap and not here. What replaces it is the
+    # bound the manuscript already computes in prose, the one-sided rule of three, evaluated
+    # at the effective sample size so that the clustering correction survives.
+    elif successes in (0, total) and total:
+        divisor = max(deff, 1.0) if deff and deff > 0 else 1.0
+        bound = one_sided_bound(total / divisor, conf)
+        lo, hi = (0.0, bound) if successes == 0 else (1.0 - bound, 1.0)
+        method += "; one-sided bound at the effective sample size"
 
     return ProportionEstimate(
         successes, total, m, p_hat, lo, hi, deff, n_eff, method, naive[0], naive[1],
@@ -1692,6 +1721,64 @@ def challenge_evidence(reports: list) -> dict:
     }
 
 
+def absence_audit(reports: list) -> dict:
+    """Bound the direction the failure audit cannot reach: absence read where none exists.
+
+    The re-implementation audit samples verdicts that *failed*, so it bounds rules misapplied
+    to a failing case. The two headline quantities are not of that shape. Both are counts of a
+    field being absent from a document, and the way such a count goes wrong is that the
+    document was never really read: fetched from the wrong location, returned as HTML, parsed
+    into nothing, or read under a key the specification spells differently. None of that
+    produces a failing verdict for the audit to sample. Written 18 August 2026 after review
+    named the gap.
+
+    What is checkable from stored evidence is whether each "absent" reading rests on a
+    document that exists, parsed, and carries the neighbouring members the specification
+    requires of the same document. An issuer whose metadata parsed and announced its own
+    issuer identifier is one whose silence on a further member is a real silence. One that
+    parsed into an empty object is not, and is counted separately rather than assumed either
+    way.
+
+    This does not bound fetching. If the wrong URL was requested for every issuer alike, every
+    document here would look well-formed and the count would still be wrong. That limit is
+    stated rather than closed, and it is why the fixture pack exercises the URL construction
+    separately.
+    """
+    documents = issuer_documents(reports, "observed")
+    rows = {
+        "documents": len(documents),
+        "empty": 0,
+        "no_issuer_member": 0,
+        "well_formed": 0,
+        "advertises_iss": 0,
+        "publishes_protected_resources": 0,
+        "protected_resources_empty": 0,
+    }
+    for doc in documents.values():
+        if not isinstance(doc, dict) or not doc:
+            rows["empty"] += 1
+            continue
+        if not doc.get("issuer"):
+            rows["no_issuer_member"] += 1
+        else:
+            rows["well_formed"] += 1
+        if _advertises_iss(doc):
+            rows["advertises_iss"] += 1
+        if _publishes_protected_resources(doc):
+            rows["publishes_protected_resources"] += 1
+        elif isinstance(doc.get("protected_resources"), list):
+            rows["protected_resources_empty"] += 1
+    total = rows["documents"]
+    # The share of "absent" readings resting on a document that announced its own identity.
+    # A one-sided bound on the rest is the honest form: those are documents whose silence
+    # this study cannot distinguish from its own failure to read them.
+    unverified = rows["empty"] + rows["no_issuer_member"]
+    rows["unverified_absence"] = unverified
+    rows["verified_absence_share"] = (rows["well_formed"] / total) if total else None
+    rows["unverified_absence_bound"] = (unverified / total) if total else None
+    return rows
+
+
 def implementation_unit_composition(reports: list, check_id) -> dict:
     """What the implementation unit is made of, for a check whose key can be absent.
 
@@ -2026,5 +2113,6 @@ def analyse(reports: list, conf: float = 0.95, sampling: dict | None = None) -> 
                           CheckId.AS_CORRESPONDENCE)
         },
         "failure_fingerprints": failure_fingerprint_composition(reports),
+        "absence_audit": absence_audit(reports),
         "issuers_per_endpoint": issuers_per_endpoint(reports),
     }
