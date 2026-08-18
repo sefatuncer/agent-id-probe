@@ -1229,8 +1229,44 @@ def exposure_analysis(reports: list, conf: float = 0.95) -> dict:
         "crossing_edges": len(crossing_edges),
         "crossing_issuers": len(crossing_issuers),
         "crossing_issuers_with_document": sum(1 for d in crossing_docs.values() if d),
+        # The two apexes the widest interval in the study is explained by, as counts rather
+        # than names. Section 6.4 said "one apex declares 80 issuers and 80 of them leave its
+        # own domain", which conflates them: the apex carrying 80 crossing edges names one
+        # issuer eighty times, and the apex naming the most issuers declares 83 and crosses
+        # with none of them. Section 8.1 already had it right. Emitted here so the sentence
+        # is read off the graph rather than typed. Names are withheld; the counts carry the
+        # argument and naming a deployment does not.
+        "top_crossing_apex": dict(zip(
+            ("crossing_edges", "distinct_issuers", "total_edges"),
+            max(((sum(1 for a, i in graph.edges
+                      if a == apex and _apex(i) and _apex(i) != apex),
+                  len({i for a, i in graph.edges if a == apex}),
+                  sum(1 for a, _ in graph.edges if a == apex))
+                 for apex in {a for a, _ in graph.edges}),
+                default=(0, 0, 0)), strict=True)),
+        "widest_declaring_apex": dict(zip(
+            ("distinct_issuers", "crossing_edges", "total_edges"),
+            max(((len({i for a, i in graph.edges if a == apex}),
+                  sum(1 for a, i in graph.edges
+                      if a == apex and _apex(i) and _apex(i) != apex),
+                  sum(1 for a, _ in graph.edges if a == apex))
+                 for apex in {a for a, _ in graph.edges}),
+                default=(0, 0, 0)), strict=True)),
         "c16_crossing": _rate(_advertises_iss, crossing_docs),
         "c18_crossing": _rate(_publishes_protected_resources, crossing_docs),
+        # The same two rates over the denominator R11.5 fixes for each check, rather than
+        # over the requested set for both. C16 is counted over declared issuers and C18 over
+        # observed ones, "because its subject is what a retrieved document contains and an
+        # absent document supports no reading at all" -- and the crossing subset was
+        # reporting C18 over the requested set anyway, which is 202 rather than the 182 whose
+        # documents were read. The point estimate does not move, since it is zero over both,
+        # but the denominator the paper's sharpest sentence prints was not the one its own
+        # ninth rule specifies. Found 18 August 2026 in review; both are published so the
+        # choice is visible rather than argued.
+        "c18_crossing_observed": _rate(
+            _publishes_protected_resources, {i: d for i, d in crossing_docs.items() if d}),
+        "c16_crossing_observed": _rate(
+            _advertises_iss, {i: d for i, d in crossing_docs.items() if d}),
         "c16_all": _rate(_advertises_iss, documents),
         "c18_all": _rate(_publishes_protected_resources, documents),
         "c18_crossing_contrast": _contingency(_publishes_protected_resources),
@@ -1497,6 +1533,289 @@ def _publishes_protected_resources(doc: dict | None) -> bool:
     return isinstance(listed, list) and len(listed) > 0
 
 
+def _oidc_id_token_carrier(doc: dict | None) -> bool:
+    """Can this issuer put its identifier in an ID Token in the authorization response?
+
+    RFC 9700, Section 4.4.2 requires a mix-up defence and names more than one carrier for
+    it. The instrument measures one, the RFC 9207 `iss` parameter, because that is the
+    carrier a discovery document announces, and until 18 August 2026 the paper said the
+    defence "depends" on it. It does not. The same section says the issuer identifier can
+    reach the client in an OpenID Connect ID Token instead, and a third countermeasure, a
+    distinct redirection URI per issuer, is a client-side arrangement that no server
+    document can show and this instrument therefore cannot see at all.
+
+    This predicate is deliberately the narrow reading of the second carrier. Publishing
+    OpenID provider metadata is necessary but not sufficient: the ID Token carries the
+    defence only when it is returned *in the authorization response*, which is what
+    `response_types_supported` announces. A provider that returns the token at the token
+    endpoint has not given the client the same check at the same moment. Counting every
+    OpenID provider would overstate the second carrier the way counting only `iss`
+    understates the defence, so both readings are reported and neither is chosen silently.
+    """
+    if not doc:
+        return False
+    types = doc.get("response_types_supported")
+    if not isinstance(types, list):
+        return False
+    return any(isinstance(t, str) and "id_token" in t.split() for t in types)
+
+
+def _publishes_oidc_metadata(doc: dict | None) -> bool:
+    """Wider reading of the second carrier: the document is an OpenID provider's.
+
+    `subject_types_supported` and `id_token_signing_alg_values_supported` are REQUIRED of an
+    OpenID provider by OpenID Connect Discovery, Section 3, so either one identifies the
+    document class without a judgement call.
+    """
+    if not doc:
+        return False
+    return any(doc.get(key) for key in
+               ("subject_types_supported", "id_token_signing_alg_values_supported"))
+
+
+def mixup_defence_carriers(reports: list, conf: float = 0.95) -> dict:
+    """How many issuers announce *any* carrier of the mix-up defence, not just RFC 9207.
+
+    Added 18 August 2026, after review, and it is a widening of the question rather than a
+    correction of an answer: the RFC 9207 rate is unchanged and remains the pre-declared
+    headline under R11.1. What this adds is the denominator the headline's *sentence* was
+    about. A client facing an OpenID provider that returns an ID Token in the authorization
+    response has a mix-up defence available whether or not the `iss` flag is set, so the
+    published rate is a floor for defence availability and not an estimate of it.
+
+    Both readings of the second carrier are reported (see `_oidc_id_token_carrier` and
+    `_publishes_oidc_metadata`). The union with RFC 9207 is given for each, because that is
+    the quantity a reader wants and computing it by adding the two rates would be wrong:
+    the sets overlap.
+
+    The third countermeasure RFC 9700 permits, a distinct redirection URI per issuer, is
+    invisible to a passive probe. It is named in the record so that the union is read as a
+    lower bound on what is available rather than as the whole of it.
+    """
+    documents = issuer_documents(reports, "observed")
+    total = len(documents)
+    iss = {i for i, d in documents.items() if _advertises_iss(d)}
+    narrow = {i for i, d in documents.items() if _oidc_id_token_carrier(d)}
+    wide = {i for i, d in documents.items() if _publishes_oidc_metadata(d)}
+
+    def _row(carrier: set) -> dict:
+        union = iss | carrier
+        return {
+            "carrier_only": len(carrier - iss),
+            "carrier": len(carrier),
+            "union": len(union),
+            "union_rate": (len(union) / total) if total else None,
+        }
+
+    return {
+        "observed_issuers": total,
+        "rfc9207": len(iss),
+        "rfc9207_rate": (len(iss) / total) if total else None,
+        "id_token_in_authorization_response": _row(narrow),
+        "openid_provider_metadata": _row(wide),
+        "unobservable_carriers": ["distinct redirection URI per issuer (RFC 9700 4.4.2.2)"],
+    }
+
+
+def challenge_evidence(reports: list) -> dict:
+    """What the two challenge statuses actually carried, which decides one of them.
+
+    `CHALLENGE_STATUSES` treats 401 and 403 alike, and Section 6.1 says a challenge "shows
+    the posture directly". Measured on 18 August 2026 after review, that is true of one of
+    them and not the other: every 403 in this corpus answered without a `WWW-Authenticate`
+    field, which is what a web application firewall, a geographic filter or an IP-reputation
+    service returns. Section 9.2 names correlated blocking as this study's primary validity
+    threat, so counting those 54 responses as authorization postures runs against the
+    study's own stated risk. Both populations are reported so the cost of the pre-specified
+    choice is visible; the rule itself is not changed after the fact.
+
+    The same pass produces a quantity the instrument was not asking for. RFC 6750, Section 3
+    is unambiguous and binds the resource server:
+
+        "If the protected resource request does not include authentication credentials or
+        does not contain an access token that enables access to the protected resource, the
+        resource server MUST include the HTTP "WWW-Authenticate" response header field."
+
+    Every request this instrument makes is unauthenticated, so the precondition holds for
+    every endpoint here, and MCP makes an MCP server an OAuth protected resource (Section
+    2.1), so the sentence binds the endpoints in this population. C07 already looks at this
+    header but only for the `resource_metadata` parameter and only at SHOULD strength, so a
+    401 carrying no header at all was never scored against the clause that requires one.
+    """
+    from .models import Modality
+
+    seen: set[str] = set()
+    rows = {status: {"n": 0, "with_header": 0} for status in CHALLENGE_STATUSES}
+    scored = {"n": 0, "k": 0}
+    clusters: dict[str, list[int]] = {}
+    for report in reports:
+        if report.modality is not Modality.OAUTH_METADATA:
+            continue
+        if report.endpoint.endpoint_id in seen:
+            continue
+        seen.add(report.endpoint.endpoint_id)
+        status = report.http_status
+        if status not in rows:
+            continue
+        header = ((report.evidence or {}).get("www_authenticate")) or None
+        rows[status]["n"] += 1
+        if header:
+            rows[status]["with_header"] += 1
+        # The RFC 6750 population is the 401s the access policy let us ask, because a
+        # politeness exclusion must never be published as an operator's failure (R4).
+        if status == 401 and report.robots_allowed and not report.opted_out \
+                and not report.crossed_origin():
+            scored["n"] += 1
+            bucket = clusters.setdefault(
+                report.endpoint.apex_domain or f"?{report.endpoint.endpoint_id}", [0, 0])
+            bucket[1] += 1
+            if header:
+                scored["k"] += 1
+                bucket[0] += 1
+
+    estimate = cluster_robust_proportion([(k, n) for k, n in clusters.values()]) \
+        if clusters else None
+    return {
+        "by_status": {
+            str(status): {
+                "n": row["n"],
+                "with_header": row["with_header"],
+                "without_header": row["n"] - row["with_header"],
+                "header_rate": (row["with_header"] / row["n"]) if row["n"] else None,
+            }
+            for status, row in rows.items()
+        },
+        "rfc6750_population": scored["n"],
+        "rfc6750_conforming": scored["k"],
+        "rfc6750_failing": scored["n"] - scored["k"],
+        "rfc6750_rate": estimate.as_record() if estimate else None,
+    }
+
+
+def implementation_unit_composition(reports: list, check_id) -> dict:
+    """What the implementation unit is made of, for a check whose key can be absent.
+
+    `_cluster_key` falls back to `?<endpoint_id>` when a report has no implementation
+    fingerprint, and the fingerprint is a hash over the member names of the protected-resource
+    document. For C12 and C13 that is harmless, because their denominator is a document that
+    was read. For C05 it is not: an endpoint that publishes nothing cannot have a fingerprint,
+    so every failing endpoint becomes its own singleton cluster and the collapsed population
+    is a mixture of two things -- implementations, and endpoints standing in for the absence
+    of one. Measured 18 August 2026 after a referee ran the instrument; the published rate at
+    that unit is the mixture, not a property of implementations.
+
+    Nothing here changes a verdict. It reports what the unit contains so the rate can be
+    printed as the two rates it is made of, or withdrawn, rather than read as one.
+    """
+    from .models import Outcome
+
+    applicable = [
+        r for r in reports
+        if r.robots_allowed and not r.opted_out and not r.crossed_origin()
+        and (o := r.outcome_of(check_id)) is not None
+        and o not in (Outcome.NOT_APPLICABLE, Outcome.ERROR, Outcome.UNSPECIFIED)
+    ]
+    collapsed = _collapse_to_one_per(applicable, "implementation")
+    rows = {"fingerprinted": {"n": 0, "k": 0}, "synthetic": {"n": 0, "k": 0}}
+    for report in collapsed:
+        key = "fingerprinted" if (report.evidence or {}).get("implementation_fingerprint") \
+            else "synthetic"
+        rows[key]["n"] += 1
+        if report.outcome_of(check_id) is Outcome.PASS:
+            rows[key]["k"] += 1
+    for row in rows.values():
+        row["rate"] = (row["k"] / row["n"]) if row["n"] else None
+    total_n = rows["fingerprinted"]["n"] + rows["synthetic"]["n"]
+    total_k = rows["fingerprinted"]["k"] + rows["synthetic"]["k"]
+    rows["total"] = {
+        "n": total_n,
+        "k": total_k,
+        "rate": (total_k / total_n) if total_n else None,
+    }
+    rows["synthetic_share"] = (rows["synthetic"]["n"] / total_n) if total_n else None
+    return rows
+
+
+def failure_fingerprint_composition(reports: list) -> dict:
+    """The denominator under Section 6.8's concentration statistic, which was not printed.
+
+    Section 6.8 says the MUST-level failures "spread over 517 distinct implementation
+    fingerprints, of which the ten largest carry 28.8%". Both counts are over the failures
+    that *have* a fingerprint; the ones that do not are all C05, where the missing document
+    is the failure. The share over every failure is smaller and is the one the sentence
+    sounds like it is making. Measured 18 August 2026 after review.
+    """
+    from .models import CheckId, Modality, Outcome
+
+    must_checks = (CheckId.PRM_PRESENT, CheckId.PRM_RESOURCE_IDENTITY_MATCH,
+                   CheckId.AS_CORRESPONDENCE)
+    failing = (Outcome.FAIL_UNIMPLEMENTED, Outcome.FAIL_MISIMPLEMENTED)
+    per_fingerprint: dict[str, int] = {}
+    with_fp = without_fp = 0
+    for report in reports:
+        if report.modality is not Modality.OAUTH_METADATA:
+            continue
+        hits = sum(1 for c in report.checks
+                   if c.check_id in must_checks and c.outcome in failing)
+        if not hits:
+            continue
+        fingerprint = (report.evidence or {}).get("implementation_fingerprint")
+        if fingerprint:
+            with_fp += hits
+            per_fingerprint[fingerprint] = per_fingerprint.get(fingerprint, 0) + hits
+        else:
+            without_fp += hits
+    ranked = sorted(per_fingerprint.values(), reverse=True)
+    total = with_fp + without_fp
+    return {
+        "failures_total": total,
+        "failures_with_fingerprint": with_fp,
+        "failures_without_fingerprint": without_fp,
+        "fingerprints": len(per_fingerprint),
+        "top10_share_of_fingerprinted": (sum(ranked[:10]) / with_fp) if with_fp else None,
+        "top10_share_of_all": (sum(ranked[:10]) / total) if total else None,
+    }
+
+
+def issuers_per_endpoint(reports: list) -> dict:
+    """How many authorization servers one resource actually names.
+
+    RFC 9700, Section 2.1 requires a mix-up defence of a client "able to interact with more
+    than one authorization server", and Section 8.2 read that as covering any client that
+    follows discovery wherever a resource points. Whether that reading is wide or narrow is
+    an empirical question about this corpus and it was never asked. Measured 18 August 2026
+    after review: the answer decides whether the selection the defence addresses arises at
+    the endpoint at all, or only across the corpus.
+    """
+    from .models import Modality
+
+    seen: set[str] = set()
+    lengths: list[int] = []
+    for report in reports:
+        if report.modality is not Modality.OAUTH_METADATA:
+            continue
+        if report.endpoint.endpoint_id in seen:
+            continue
+        seen.add(report.endpoint.endpoint_id)
+        declared = (report.evidence or {}).get("authorization_servers") or []
+        declared = [i for i in declared if isinstance(i, str)]
+        if declared:
+            lengths.append(len(declared))
+    if not lengths:
+        return {"declaring_endpoints": 0}
+    lengths.sort()
+    more_than_one = sum(1 for n in lengths if n > 1)
+    return {
+        "declaring_endpoints": len(lengths),
+        "declarations": sum(lengths),
+        "min": lengths[0],
+        "median": lengths[len(lengths) // 2],
+        "max": lengths[-1],
+        "more_than_one": more_than_one,
+        "more_than_one_share": more_than_one / len(lengths),
+    }
+
+
 # --- R11 executed rather than described ----------------------------------------
 
 # The candidate list, in the order frozen by R11.1. Rank 3 is the topology, which is not a
@@ -1545,7 +1864,7 @@ def headline_candidates(reports: list, conf: float = 0.95) -> list[tuple[str, Pr
     return [(label, by_rank[rank]) for rank, label, _ in HEADLINE_CANDIDATES]
 
 
-def analyse(reports: list, conf: float = 0.95) -> dict:
+def analyse(reports: list, conf: float = 0.95, sampling: dict | None = None) -> dict:
     """Everything R11 and R12 require, as one record written before the paper is touched.
 
     The point is not convenience. R11.2 selects the headline, and a selection that happens
@@ -1553,12 +1872,69 @@ def analyse(reports: list, conf: float = 0.95) -> dict:
     best number. Emitting the ranked candidates, each interval, each verdict and the reason
     the winner won makes the selection an event with a transcript -- which is the only form
     of it a reviewer can check.
+
+    **What this record contains was widened on 18 August 2026, and the reason is the same
+    one.** Five functions in this module -- the delegation topology, the worst-case bounds on
+    the unobserved fraction, the composition of that fraction, the cost of the identifier
+    normalisation and the cost of the per-host cap -- produced quantities the manuscript
+    prints and were reachable only from the manuscript's own build pipeline, which is not
+    published. A reader with the artefact and the data could re-score every verdict and still
+    not regenerate Table 11, the topology, the bounds, or either sensitivity arm, because no
+    shipped command called those functions. That is a reproducibility claim resting on a
+    program nobody else has. They are called here instead, so the published tool computes
+    what the published paper reports.
+
+    `sampling` is the run's `sampling.json` when there is one. It carries the per-host cap
+    and what the cap withheld, which is what the cap's cost is estimated from; without it
+    that one section is omitted rather than guessed.
     """
-    from .models import CheckId
+    from .models import CheckId, Modality
 
     candidates = headline_candidates(reports, conf)
     graph = build_delegation_graph(reports)
     winner, reason = select_headline(candidates)
+    oauth_reports = [r for r in reports if r.modality is Modality.OAUTH_METADATA]
+    unreachable = unreachable_composition(oauth_reports)
+
+    # The three definitions of the unobserved share b that Table 11 reports, computed here
+    # rather than in the manuscript's pipeline. They differ in who is charged for an endpoint
+    # leaving the denominator: only the operator, the operator plus our own access policy, or
+    # both plus the frame the per-host rule never sampled. R4 forbids publishing our policy
+    # as a property of the ecosystem, which is why the first row exists; honesty about what
+    # the policy costs is why the other two do.
+    seen: set[str] = set()
+    endpoints = 0
+    robots_excluded = crossed = 0
+    for report in oauth_reports:
+        if report.endpoint.endpoint_id in seen:
+            continue
+        seen.add(report.endpoint.endpoint_id)
+        endpoints += 1
+        if not report.robots_allowed or report.opted_out:
+            robots_excluded += 1
+        elif report.crossed_origin():
+            crossed += 1
+    not_sampled = int((sampling or {}).get("not_sampled_total") or 0)
+    frame_total = endpoints + not_sampled
+    withheld_by_us = unreachable["scope_gated"] + robots_excluded + crossed
+    shares = {
+        "operator": (unreachable["operator_caused"] / endpoints) if endpoints else 0.0,
+        "policy": ((unreachable["operator_caused"] + withheld_by_us) / endpoints)
+        if endpoints else 0.0,
+        "frame": ((unreachable["operator_caused"] + withheld_by_us + not_sampled)
+                  / frame_total) if frame_total else 0.0,
+    }
+    manski: dict[str, dict] = {}
+    for rank, label, _denominator in HEADLINE_CANDIDATES:
+        if rank not in (1, 2):
+            continue
+        estimate = candidates[[r for r, _, _ in HEADLINE_CANDIDATES].index(rank)][1]
+        rows = {}
+        for name, share in shares.items():
+            unobserved = round(estimate.n * share / (1 - share)) if share < 1 else 0
+            lo, hi = manski_bounds(estimate.p_hat, unobserved, estimate.n)
+            rows[name] = {"share": share, "unobserved": unobserved, "lo": lo, "hi": hi}
+        manski[label.split(" --")[0]] = rows
 
     return {
         "headline": {"selected": winner, "reason": reason},
@@ -1630,4 +2006,25 @@ def analyse(reports: list, conf: float = 0.95) -> dict:
             "observed": len(issuer_documents(reports, "observed")),
         },
         "endpoints": len(reports),
+        # --- reachable from the shipped command as of 18 August 2026 -------------------
+        "exposure": exposure_analysis(reports, conf),
+        "unreachable": unreachable,
+        "manski": manski,
+        "identifier_sensitivity": identifier_comparison_sensitivity(reports),
+        "sampling_bias": {
+            check.value: sampling_bias(reports, check, sampling["not_sampled_by_host"],
+                                       int(sampling["max_endpoints_per_host"]))
+            for check in (CheckId.PRM_PRESENT, CheckId.PRM_RESOURCE_IDENTITY_MATCH,
+                          CheckId.AS_CORRESPONDENCE)
+        } if sampling and sampling.get("not_sampled_by_host") else None,
+        # --- quantities the fourth review round asked for, all from stored evidence ----
+        "mixup_carriers": mixup_defence_carriers(reports, conf),
+        "challenge_evidence": challenge_evidence(reports),
+        "implementation_unit": {
+            check.value: implementation_unit_composition(reports, check)
+            for check in (CheckId.PRM_PRESENT, CheckId.PRM_RESOURCE_IDENTITY_MATCH,
+                          CheckId.AS_CORRESPONDENCE)
+        },
+        "failure_fingerprints": failure_fingerprint_composition(reports),
+        "issuers_per_endpoint": issuers_per_endpoint(reports),
     }
