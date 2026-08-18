@@ -10,8 +10,8 @@ it answers a different question.
 So the rules are re-implemented here, from the specification sentences rather than from
 `checks_oauth.py`, and run against the stored evidence. Where the two implementations
 disagree, one of them is wrong, and the disagreement is printed with everything needed to
-decide which. That is the audit the paper promises; the census produced 1,521 failures and no
-one is reading 1,521 verdicts, so it is taken over a seeded random sample and the sampling is
+decide which. That is the audit the paper promises; the census produced 1,506 failures and no
+one is reading 1,506 verdicts, so it is taken over a seeded random sample and the sampling is
 part of the reported method rather than a footnote to it.
 
 The independence is real but partial, and the limit is stated rather than implied: both
