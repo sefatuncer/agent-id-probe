@@ -1721,6 +1721,47 @@ def challenge_evidence(reports: list) -> dict:
     }
 
 
+def relation_reconciliation(reports: list) -> dict:
+    """Why the relation table and the rate table do not sum to the same number.
+
+    Table 6 counts identifier relations over every comparison the instrument performed; Table 5
+    counts endpoints a check applies to. Those are different populations in two directions and
+    the manuscript printed both totals without saying so, which reads as one quantity measured
+    twice and disagreeing with itself. Measured 18 August 2026 after review.
+
+    A comparison exists wherever both sides had a value. An endpoint scored *fail_unimplemented*
+    for publishing no value at all is in the rate table and in no relation class, because there
+    was nothing to relate. Conversely a comparison performed on an endpoint the access policy or
+    the *unspecified* rule removes from the rate table is still a comparison, and is counted.
+    """
+    from .models import CheckId, Modality, Outcome
+
+    pairs = ((CheckId.PRM_RESOURCE_IDENTITY_MATCH, "resource_relation"),
+             (CheckId.AS_CORRESPONDENCE, "as_issuer_relations"))
+    oauth = [r for r in reports if r.modality is Modality.OAUTH_METADATA]
+    out: dict[str, dict] = {}
+    for check, key in pairs:
+        def _relations(report, key: str = key) -> int:
+            value = (report.evidence or {}).get(key)
+            if isinstance(value, dict):
+                return len(value)
+            return 1 if value else 0
+
+        applicable = [
+            r for r in oauth
+            if r.robots_allowed and not r.opted_out and not r.crossed_origin()
+            and (o := r.outcome_of(check)) is not None
+            and o not in (Outcome.NOT_APPLICABLE, Outcome.ERROR, Outcome.UNSPECIFIED)
+        ]
+        out[check.value] = {
+            "rate_denominator": len(applicable),
+            "comparisons": sum(_relations(r) for r in oauth),
+            "comparisons_in_rate_population": sum(_relations(r) for r in applicable),
+            "scored_without_comparison": sum(1 for r in applicable if not _relations(r)),
+        }
+    return out
+
+
 def absence_audit(reports: list) -> dict:
     """Bound the direction the failure audit cannot reach: absence read where none exists.
 
@@ -2114,5 +2155,6 @@ def analyse(reports: list, conf: float = 0.95, sampling: dict | None = None) -> 
         },
         "failure_fingerprints": failure_fingerprint_composition(reports),
         "absence_audit": absence_audit(reports),
+        "relation_reconciliation": relation_reconciliation(reports),
         "issuers_per_endpoint": issuers_per_endpoint(reports),
     }
