@@ -6,7 +6,7 @@
 we contact. The `User-Agent` of every request we send points here. If you are an operator and
 you want us to stop, see §7 — one line is enough, and we do not ask why.*
 
-Last updated: 28 July 2026.
+Last updated: 1 October 2026 (§8 and §9 amended, see the notes there).
 
 ---
 
@@ -116,7 +116,7 @@ public repository, which carries this document and the opt-out address.
 - **No vulnerability scanning.** We do not fuzz, enumerate, or fingerprint for weaknesses.
 - **No registration of any domain we discover.** If the study finds that a declared issuer's
   domain has lapsed and is available, we report the *existence* of the class in aggregate and
-  we do not register it, and we do not publish the name until the operator has been notified.
+  we do not register it, and we never publish the name.
 
 ## 5. The one open question: MCP `initialize`
 
@@ -197,21 +197,35 @@ three reasons:
 
 ## 8. Publication policy
 
-There is a real tension here between reproducibility and not exposing individual endpoints,
-and we resolve it explicitly rather than leaving it to taste:
+> **Amended 1 October 2026.** The authors decided not to notify operators or maintainers
+> (§9). Per-endpoint detail was only ever to be released after that notification, so it is
+> not released at all. The policy below replaces the one of 28 July 2026, which is kept
+> underneath for the record.
 
-- **The corpus is published** — the list of endpoint URLs, with the collection date. These
-  come from a public registry and publishing them adds no exposure.
-- **Aggregate results are published** with the paper.
-- **Per-endpoint verdicts are not published with the paper.** They are released only after
-  the disclosure window in §9 has closed.
-- **No endpoint is named in the text as an example of a failure** unless its operator has
-  been notified and has not objected.
-- Personal data encountered in fetched documents is masked before publication (KVKK / GDPR:
-  the lawful basis is legitimate interest in publicly published documents; personal data is
-  not sought, and is minimised where it appears).
+- **Only aggregate results are published**, with the paper.
+- **Nothing endpoint-level is published**: not the corpus list, not per-endpoint verdicts,
+  not the raw responses. They are retained by the authors.
+- **No endpoint, operator or issuer is named in the text as an example of a failure.**
+- Personal data encountered in fetched documents is masked before anything is published
+  (KVKK / GDPR: the lawful basis is legitimate interest in publicly published documents;
+  personal data is not sought, and is minimised where it appears).
+
+*Superseded policy (28 July 2026):* the corpus list was to be published; per-endpoint
+verdicts were to be released after the disclosure window in §9 closed; an endpoint could be
+named as an example of a failure once its operator had been notified and had not objected.
 
 ## 9. Responsible disclosure
+
+> **Amended 1 October 2026: no notification is made.** The tiered plan below was never
+> executed. No operator, SDK maintainer, hosting platform or registry operator was notified,
+> and none will be. What the study publishes is aggregate (§8), names no non-conforming
+> deployment, and concerns documents their operators already serve to anonymous clients. The
+> client-bench departures concern open-source packages, and the paper identifies them by role
+> and version. The 90-day window below therefore never opens, and per-endpoint detail is
+> never published. The specification-level findings, the `UNSPECIFIED` catalogue, are
+> published in the paper.
+
+*Superseded plan (28 July 2026), kept for the record:*
 
 **What counts as reportable:** a declared issuer that does not resolve or does not identify
 itself consistently (the client's discovery chain is broken); a resource identifier mismatch

@@ -9,7 +9,8 @@ build/
 .pytest_cache/
 .ruff_cache/
 
-# Raw measurement data (large, regenerable; snapshots are published separately)
+# Raw measurement data: large, and not regenerable (the census cannot be re-collected).
+# Not published; see docs/ETHICS.md section 8.
 data/raw/**
 !data/raw/.gitkeep
 

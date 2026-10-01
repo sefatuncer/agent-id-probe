@@ -202,7 +202,7 @@ biases the result in exactly the direction of the property being measured.
 Passive and read-only. No authentication, no writes, no exploitation, no bypass attempts.
 Rate limiting, `robots.txt`, an identifying `User-Agent`, an enforced opt-out list and a
 global abort threshold live in `config.py` and `runner.py` — in code, not in prose. Only
-aggregate results are published, and per-endpoint detail only after the disclosure window.
+aggregate results are published. Per-endpoint detail is not published at all.
 See [`docs/ETHICS.md`](docs/ETHICS.md).
 
 ## Cost
