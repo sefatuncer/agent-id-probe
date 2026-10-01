@@ -338,7 +338,7 @@ The realistic worst case is that a fragile endpoint is disturbed by our requests
    > httpx's read timeout is per-read.
    >
    > **The review's actual output was four defects, all in the instrument, all fixed before
-   > the census** (commits `eb76e5b`, `d46e797`, `e92d493`): the per-host request ceiling
+   > the census** (commits `fcf7949`, `c03c8c2`, `d7f4afa`): the per-host request ceiling
    > would have recorded a fifth of the corpus as unreachable and aborted the run (R10.6);
    > `robots.txt` exclusions were feeding the abort counter; no request had a total deadline
    > and the `robots.txt` path had no bound at all; and authorization posture was inferred
@@ -349,7 +349,7 @@ The realistic worst case is that a fragile endpoint is disturbed by our requests
    > Both halves were unmet on 28 July and the box was wrongly ticked then. Both are now
    > met, and the record of how matters more than the tick.
    >
-   > *Committed:* commit `a1408d1` (29 July 2026) carries the rules and the amendment log,
+   > *Committed:* commit `9a9b4ea` (29 July 2026, tag `rules-frozen-v1`) carries the rules and the amendment log,
    > so "frozen before collection" now has a timestamp behind it rather than an assertion.
    >
    > *Fixtures:* `tests/fixtures/` exists — 41 self-describing JSON fixtures, each quoting

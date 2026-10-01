@@ -27,15 +27,15 @@ The binding statement is this:
 
 ## Amendment log
 
-**Commit `85faf3b` (29 July 2026) covers the rows below dated 2026-07-28 and the first
+**Commit `9a9b4ea` (29 July 2026, tag `rules-frozen-v1`) covers the rows below dated 2026-07-28 and the first
 2026-07-29 batch.** Until that date none of these rules had been committed — that is, the
 phrase "frozen before the data" had no timestamp behind it, only an assertion. Rows added
 after it are covered by the commit that introduces them, which is the same guarantee: no row
 in this log postdates the commit that carries it.
 
-*The hashes in this file were rewritten once, on 29 July 2026, before the repository was
-first published. Nothing about the content changed; commit message trailers were removed and
-every hash therefore moved. The references here point at the published history, which is the
+*The hashes in this file were rewritten twice, on 29 July and 10 August 2026. Only commit
+messages were edited, so every hash moved while every tree stayed byte-identical. The
+references here were re-pointed on 1 October 2026 to the published history, which is the
 only one a reader can check.*
 
 | Date | Rule | Amendment | Rationale |
@@ -59,8 +59,8 @@ only one a reader can check.*
 | 2026-07-30 | **R10.6** | **New** — endpoints on one hostname are **sampled**, at most 25, chosen deterministically by `endpoint_id`; the remainder is a named, counted exclusion. **R10.5 is qualified**: the census claim stays exact at the hostname, apex and implementation units and is no longer exact at the endpoint unit | Found by the narrow-slice rehearsal, before the census. The 30-request per-host ceiling and the shape of the corpus are incompatible: 2,015 of 10,653 endpoints sit on eleven hostnames, one of which carries 1,281. At two to six requests each the ceiling was spent after a handful, the rest returned `OUT_OF_SCOPE` with `reachable=False`, and about a fifth of the corpus would have been counted as unreachable — enough to trip the abort and blame the ecosystem for our own configuration. Raising the ceiling would have sent one operator some 7,700 requests, which is what it was added to prevent. Sampling costs a claim (at the endpoint unit this is a census of hostnames and a sample within the large ones) and the paper states it; the frame is preserved in `corpus.jsonl`, so the sampling fraction stays checkable |
 | 2026-07-30 | **R4 / ETHICS §10** | Robots-excluded endpoints **leave the kill switch's failure counter**, and are counted separately | The same rehearsal measured it rather than arguing it: 17 of 198 endpoints were excluded by `robots.txt`, which was 8.6 of the 15.2 percentage points the switch was reading. §10 defines its threshold over endpoints that were *"unreachable or blocked"*, and a robots exclusion is neither — we reached the host, read its rules, and chose not to ask. Identical in form to the opt-out fix of 29 July, on the branch that was missed then. With Okta and Auth0 both serving `Disallow: /` (ETHICS §6.1), a stratum heavy in hosted identity platforms could have aborted the census on a property of the ecosystem |
 | 2026-07-30 | **R4 / R5** | A transport failure on the endpoint fetch now scores **`ERROR`**, not `NOT_APPLICABLE` | Found in the pre-flight `dry-run`. With no response there is no 401, so every MUST stage took the composition branch and recorded *"authorization is OPTIONAL in MCP and this endpoint did not require it"* against a host we never reached. R5 makes `ERROR` the set the second run reconciles; `NOT_APPLICABLE` is not in it, so a transiently-failing endpoint would have been booked as one that does not use authorization and the confirmation run would never have been pointed at it. No rate moves — both outcomes leave every denominator — but the stored record now says what happened |
-| 2026-07-27 | R1–R8 | Initial freeze (commit `7d865d5`) | After the pilot, before the main run |
-| 2026-07-28 | R8 | Human coders + Cohen's kappa → fixture suite + replay determinism (commit `df1613b`) | Kappa is the instrument of designs that score a rubric; this instrument is mechanical and there is no subjectivity to measure |
+| 2026-07-27 | R1–R8 | Initial freeze (commit `fcfdf3d`) | After the pilot, before the main run |
+| 2026-07-28 | R8 | Human coders + Cohen's kappa → fixture suite + replay determinism (commit `2c8468b`) | Kappa is the instrument of designs that score a rubric; this instrument is mechanical and there is no subjectivity to measure |
 | 2026-07-28 | **R9** | **New** — identifier comparison policy | Three-agent review: C12's expected value was derived wrongly and C12/C13 had opposite strictness. Running without a written comparison policy would have left the headline violation rate to an unwritten judgement call |
 | 2026-07-28 | **R10** | **New** — unit of analysis and cluster definition | The same review: endpoints are not independent, and choosing the cluster definition after the data is open to the objection "you chose the clustering that gave you the CI you wanted" |
 | 2026-07-28 | R7 | The revision set was pinned by date | The phrase "the most permissive revision in force" silently swallowed a revision released on the day of the run |
