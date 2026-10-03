@@ -1,0 +1,79 @@
+{
+  "schema": "agent-id-probe/rescore-diff/1",
+  "before": "census2-pre-2026-10-03",
+  "after": "census2",
+  "reports_before": 16578,
+  "reports_after": 16578,
+  "reports_only_before": 0,
+  "must_failures_before": {
+    "C05": 525,
+    "C12": 845,
+    "C13": 136,
+    "total": 1506
+  },
+  "must_failures_after": {
+    "C05": 511,
+    "C12": 850,
+    "C13": 65,
+    "total": 1426
+  },
+  "failing_units_before": {
+    "endpoints": 1324,
+    "apexes": 858
+  },
+  "failing_units_after": {
+    "endpoints": 1256,
+    "apexes": 845
+  },
+  "transitions": {
+    "C05: fail_unimplemented -> error": 3,
+    "C05: fail_unimplemented -> not_applicable": 14,
+    "C05: fail_unimplemented -> pass": 1,
+    "C05: not_applicable -> error": 11,
+    "C05: not_applicable -> fail_misimplemented": 4,
+    "C05: not_applicable -> pass": 3,
+    "C05: pass -> error": 2,
+    "C12: absent -> error": 3,
+    "C12: absent -> fail_misimplemented": 1,
+    "C12: absent -> not_applicable": 14,
+    "C12: fail_misimplemented -> error": 1,
+    "C12: not_applicable -> error": 11,
+    "C12: not_applicable -> fail_misimplemented": 5,
+    "C12: not_applicable -> pass": 2,
+    "C12: pass -> error": 1,
+    "C13: absent -> error": 3,
+    "C13: absent -> not_applicable": 14,
+    "C13: absent -> pass": 1,
+    "C13: fail_unimplemented -> pass": 71,
+    "C13: not_applicable -> error": 11,
+    "C13: not_applicable -> pass": 3,
+    "C13: pass -> error": 2
+  },
+  "manifest_after": {
+    "ceiling_refusals_answered_from_run": 96,
+    "probe_tree_dirty": false,
+    "probe_version": "0.1.0",
+    "public_suffix_list": {
+      "include_psl_private_domains": false,
+      "library": "tldextract",
+      "snapshot_sha256": "b69315c085d53972724b8f2df111ffc329b0c84fe0a47d62c8c91655cc774a38",
+      "suffix_list_urls": [],
+      "version": "5.3.1"
+    },
+    "reports_in": 16578,
+    "reports_out": 16578,
+    "rescore_probe_version": "0.1.0",
+    "rescored_from": "census2",
+    "run_context": {
+      "dns_resolver": null,
+      "probe_git_commit": "6847c74e7796e52eacd5269ac78a7da6a045adf8",
+      "run_id": "census2-z",
+      "started_at": "2026-10-03T13:07:25.293825Z",
+      "vantage_point": "offline-replay"
+    },
+    "stage": "rescore",
+    "unrequested_metadata_answered_from_run": 4,
+    "unrequested_metadata_not_observed": 1,
+    "written_at": "2026-10-03T13:07:25.319603+00:00"
+  }
+}

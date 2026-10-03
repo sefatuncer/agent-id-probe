@@ -36,7 +36,10 @@ an auditor revised toward its instrument is a weaker auditor than the paper said
   sides, so the auditor was stricter than the rule it audits and could not see a false
   positive that rule's strictness produced. Both sides are now canonicalised as RFC 3986 and
   the instrument's frozen policy (R9.2) permit. No reading was changed to match the
-  instrument: version 1's three C13 disagreements are reported, not removed.
+  instrument: version 1's three C13 disagreements are reported, not removed. The rule
+  amended the same day, that a ceiling refusal is answered from a document the run already
+  held, is implemented here from its text, so that the audit reads the evidence the rule
+  admits.
 
     python scripts/audit_failures.py --run-id census2 --all
 
@@ -48,6 +51,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 import sys
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -141,6 +145,34 @@ def _challenged(report, evidence: dict) -> bool:
         report.http_status == 403 and bool(evidence.get("www_authenticate")))
 
 
+_FIRST_SUCCESS: dict[str, dict] = {}
+
+
+def _index_first_success(artefacts: dict) -> None:
+    """The run's earliest successful response to each well-known URL, for the rule dated
+    2026-10-03 that a ceiling refusal is answered from a document the run already held.
+    Written here from the rule's text, not imported from the instrument."""
+    _FIRST_SUCCESS.clear()
+    for records in artefacts.values():
+        for record in records:
+            url = record.get("url", "")
+            if (record.get("status") == 200 and record.get("error_kind", "none") == "none"
+                    and "/.well-known/" in urlsplit(url).path):
+                held = _FIRST_SUCCESS.get(url)
+                if held is None or record["fetched_at"] < held["fetched_at"]:
+                    _FIRST_SUCCESS[url] = record
+
+
+def _answered(record: dict) -> dict:
+    """A ceiling refusal answered by the run's earlier copy of the same document, if any."""
+    if (record.get("error_kind") == "out_of_scope"
+            and (record.get("error_detail") or "").startswith(_CEILING)):
+        first = _FIRST_SUCCESS.get(record.get("url", ""))
+        if first is not None and first["fetched_at"] < record["fetched_at"]:
+            return first
+    return record
+
+
 def _check_c05(report, evidence: dict, artefacts: dict) -> tuple[bool | None, str]:
     """MCP: a server that challenges MUST publish RFC 9728 metadata, naming at least one
     authorization server.
@@ -157,6 +189,7 @@ def _check_c05(report, evidence: dict, artefacts: dict) -> tuple[bool | None, st
         record = records.get(url)
         if record is None:
             continue
+        record = _answered(record)
         if _withheld(record):
             withheld.append(url)
             continue
@@ -294,6 +327,7 @@ def audit(run_id: str, sample_size: int, root: Path | None = None) -> dict:
             except json.JSONDecodeError:
                 continue
             artefacts.setdefault(record.get("endpoint_id", ""), []).append(record)
+    _index_first_success(artefacts)
 
     population = [
         (report, check) for report in reports for check in report.checks
@@ -346,6 +380,19 @@ def audit(run_id: str, sample_size: int, root: Path | None = None) -> dict:
     }
 
 
+_URL = re.compile(r"""https?://[^\s'",;)]+""")
+
+
+def redact(result: dict) -> dict:
+    """The audit record without any endpoint or issuer URL, for publication."""
+    def clean(entry: dict) -> dict:
+        return {"check": entry["check"], "instrument": entry["instrument"],
+                "reason": _URL.sub("<url>", entry.get("reason", ""))}
+    return {**result, "redacted": True,
+            "findings": [clean(e) for e in result["findings"]],
+            "undecidable_cases": [clean(e) for e in result["undecidable_cases"]]}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", required=True)
@@ -356,8 +403,14 @@ def main() -> int:
 
     result = audit(args.run_id, 10**9 if args.all else args.sample)
     suffix = "-all" if args.all else ""
+    # The full record names the endpoints behind each disagreement, so it stays beside the run
+    # it audits, which is not published. The repository carries the same record with every URL
+    # removed: the ethics record limits publication to aggregates, and a finding names a
+    # deployment the paper does not.
+    local = RunStore(ROOT, args.run_id).run_dir / f"failure-audit{suffix}.json"
+    local.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     out = ROOT / "docs" / f"failure-audit-{args.run_id}{suffix}.json"
-    out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    out.write_text(json.dumps(redact(result), indent=2) + "\n", encoding="utf-8")
 
     print(f"population {result['population']:,} failing MUST-level verdicts")
     print(f"sampled    {result['sampled']} (seed {result['seed']})")

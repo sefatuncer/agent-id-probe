@@ -14,19 +14,17 @@
     {
       "run_id": "census2",
       "reports_in": 16578,
-      "reports_out": 16577,
+      "reports_out": 16578,
       "verdicts_changed": 0,
-      "endpoints_not_replayable": 1,
-      "identical": false,
-      "differences": [
-        "a3bbfa644b5df31f [oauth_metadata]: present in the stored run, absent after replay"
-      ]
+      "endpoints_not_replayable": 0,
+      "identical": true,
+      "differences": []
     }
   ],
   "totals": {
     "reports": 33156,
     "verdicts_changed": 0,
-    "endpoints_not_replayable": 1,
-    "reports_reproduced": 33155
+    "endpoints_not_replayable": 0,
+    "reports_reproduced": 33156
   }
 }

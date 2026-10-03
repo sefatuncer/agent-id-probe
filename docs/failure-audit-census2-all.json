@@ -1,0 +1,50 @@
+{
+  "schema": "agent-id-probe/failure-audit/1",
+  "auditor_version": 2,
+  "run_id": "census2",
+  "seed": 20260806,
+  "method": "Each rule re-implemented from its specification sentence, independent of checks_oauth.py, and applied to the stored evidence and raw artefacts. Both implementations read the same stored document, so a fetching defect is invisible to both; what this detects is a misapplied rule.",
+  "population": 1426,
+  "sampled": 1426,
+  "by_check": {
+    "C13": {
+      "audited": 65,
+      "agreed": 62,
+      "disagreed": 3,
+      "undecidable": 0
+    },
+    "C12": {
+      "audited": 850,
+      "agreed": 850,
+      "disagreed": 0,
+      "undecidable": 0
+    },
+    "C05": {
+      "audited": 511,
+      "agreed": 511,
+      "disagreed": 0,
+      "undecidable": 0
+    }
+  },
+  "false_positives": 3,
+  "undecidable": 0,
+  "findings": [
+    {
+      "check": "C13",
+      "instrument": "fail_misimplemented",
+      "reason": "every returned issuer identical"
+    },
+    {
+      "check": "C13",
+      "instrument": "fail_unimplemented",
+      "reason": "every returned issuer identical"
+    },
+    {
+      "check": "C13",
+      "instrument": "fail_misimplemented",
+      "reason": "every returned issuer identical"
+    }
+  ],
+  "undecidable_cases": [],
+  "redacted": true
+}

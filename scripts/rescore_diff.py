@@ -43,6 +43,15 @@ def _failing_units(reports: dict) -> dict:
     return {"endpoints": len(endpoints), "apexes": len(apexes)}
 
 
+def _rescore_manifest(store: RunStore) -> dict:
+    """The manifest the re-score wrote, kept beside the run's collection manifest when the
+    re-scored reports replaced the original ones; the collection manifest otherwise."""
+    written = sorted(store.run_dir.glob("manifest-rescore-*.json"))
+    if written:
+        return json.loads(written[-1].read_text(encoding="utf-8"))
+    return store.read_manifest()
+
+
 def diff(before_id: str, after_id: str, root: Path = ROOT) -> dict:
     def load(run_id: str) -> dict:
         return {(r.endpoint.endpoint_id, r.modality.value): r
@@ -72,7 +81,7 @@ def diff(before_id: str, after_id: str, root: Path = ROOT) -> dict:
         "failing_units_before": _failing_units(before),
         "failing_units_after": _failing_units(after),
         "transitions": dict(sorted(transitions.items())),
-        "manifest_after": RunStore(root, after_id).read_manifest(),
+        "manifest_after": _rescore_manifest(RunStore(root, after_id)),
     }
 
 

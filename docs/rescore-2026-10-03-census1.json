@@ -1,0 +1,75 @@
+{
+  "schema": "agent-id-probe/rescore-diff/1",
+  "before": "census1-pre-2026-10-03",
+  "after": "census1",
+  "reports_before": 16578,
+  "reports_after": 16578,
+  "reports_only_before": 0,
+  "must_failures_before": {
+    "C05": 525,
+    "C12": 845,
+    "C13": 151,
+    "total": 1521
+  },
+  "must_failures_after": {
+    "C05": 512,
+    "C12": 848,
+    "C13": 76,
+    "total": 1436
+  },
+  "failing_units_before": {
+    "endpoints": 1330,
+    "apexes": 862
+  },
+  "failing_units_after": {
+    "endpoints": 1263,
+    "apexes": 850
+  },
+  "transitions": {
+    "C05: fail_unimplemented -> error": 4,
+    "C05: fail_unimplemented -> not_applicable": 13,
+    "C05: not_applicable -> error": 9,
+    "C05: not_applicable -> fail_misimplemented": 4,
+    "C05: not_applicable -> pass": 3,
+    "C05: pass -> error": 1,
+    "C12: absent -> error": 4,
+    "C12: absent -> not_applicable": 13,
+    "C12: fail_misimplemented -> error": 1,
+    "C12: not_applicable -> error": 9,
+    "C12: not_applicable -> fail_misimplemented": 4,
+    "C12: not_applicable -> pass": 3,
+    "C13: absent -> error": 4,
+    "C13: absent -> not_applicable": 13,
+    "C13: fail_unimplemented -> pass": 75,
+    "C13: not_applicable -> error": 10,
+    "C13: not_applicable -> pass": 2,
+    "C13: pass -> error": 1
+  },
+  "manifest_after": {
+    "ceiling_refusals_answered_from_run": 95,
+    "probe_tree_dirty": false,
+    "probe_version": "0.1.0",
+    "public_suffix_list": {
+      "include_psl_private_domains": false,
+      "library": "tldextract",
+      "snapshot_sha256": "b69315c085d53972724b8f2df111ffc329b0c84fe0a47d62c8c91655cc774a38",
+      "suffix_list_urls": [],
+      "version": "5.3.1"
+    },
+    "reports_in": 16578,
+    "reports_out": 16578,
+    "rescore_probe_version": "0.1.0",
+    "rescored_from": "census1",
+    "run_context": {
+      "dns_resolver": null,
+      "probe_git_commit": "6847c74e7796e52eacd5269ac78a7da6a045adf8",
+      "run_id": "census1-z",
+      "started_at": "2026-10-03T13:04:23.463939Z",
+      "vantage_point": "offline-replay"
+    },
+    "stage": "rescore",
+    "unrequested_metadata_answered_from_run": 2,
+    "unrequested_metadata_not_observed": 2,
+    "written_at": "2026-10-03T13:04:23.498884+00:00"
+  }
+}
