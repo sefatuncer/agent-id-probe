@@ -552,7 +552,7 @@ which happen outside any endpoint context.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `artifact_schema` | integer | Record format version. Currently `1` |
+| `artifact_schema` | integer | Record format version. Currently `2`; version 1 lacks `reused` |
 | `endpoint_id` | string | Which endpoint's probe caused this fetch. **Join key to `reports.jsonl → endpoint.endpoint_id`** |
 | `label` | string | `mcp` for the OAuth pass, `card` for the signed-document pass |
 | `url` | string | URL requested |
@@ -568,6 +568,7 @@ which happen outside any endpoint context.
 | `error_kind` | enum | `none` · `timeout` · `dns` · `tls` · `connection` · `blocked` · `too_large` · `robots_disallowed` · `opted_out` · `other` |
 | `error_detail` | string | Human-readable detail; `""` when there was no error |
 | `fetched_at` | string (ISO 8601) | When this response arrived |
+| `reused` | boolean | `true` when the record is the run's own earlier copy of this metadata URL, returned in place of a request the per-host ceiling refused, so no request was sent. Absent (meaning `false`) in version 1 records |
 
 ### Real record
 

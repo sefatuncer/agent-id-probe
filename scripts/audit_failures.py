@@ -14,12 +14,31 @@ decide which. That is the audit the paper promises; the census produced 1,506 fa
 one is reading 1,506 verdicts, so it is taken over a seeded random sample and the sampling is
 part of the reported method rather than a footnote to it.
 
-The independence is real but partial, and the limit is stated rather than implied: both
-implementations read the same stored document, so a defect in *fetching* -- the wrong URL
-requested, a redirect followed that should not have been -- is invisible to both. What this
-catches is a misapplied rule, which is what a false positive in this study means.
+The independence is partial, and the limit is stated rather than implied. This is a second
+implementation by the instrument's own author, and both implementations read the same stored
+document, so a defect in *fetching* -- the wrong URL requested, a redirect followed that
+should not have been -- is invisible to both. What this catches is a misapplied rule, which is
+what a false positive in this study means.
 
-    python scripts/audit_failures.py --run-id census1 --sample 100
+Revision history, because a referee found it in the docstrings rather than in the paper and
+an auditor revised toward its instrument is a weaker auditor than the paper said (H2-M3):
+
+* version 1 (August 2026) implemented only the first paragraph of RFC 9728 3.3 for C12 and
+  reported 15 false positives, all on the WWW-Authenticate hint path. The second paragraph
+  was added after the clause was re-read, which also made the auditor agree with the
+  instrument on those 15. C13 at first audited only a returned mismatch and was extended to
+  an issuer serving no metadata.
+* version 2 (3 October 2026) repairs two defects the referee found by running it. The C05 arm
+  skipped every artefact whose label did not contain "protected-resource" or "prm"; census
+  artefacts are labelled only "mcp" and "card", so it read nothing and returned "agree" for
+  all 525 C05 failures. It now selects candidates by URL and decides both failure branches.
+  And C12 and C13 compared the declared value raw while the instrument canonicalises both
+  sides, so the auditor was stricter than the rule it audits and could not see a false
+  positive that rule's strictness produced. Both sides are now canonicalised as RFC 3986 and
+  the instrument's frozen policy (R9.2) permit. No reading was changed to match the
+  instrument: version 1's three C13 disagreements are reported, not removed.
+
+    python scripts/audit_failures.py --run-id census2 --all
 
 Writes `docs/failure-audit-<run-id>.json`. Deterministic: same run, same seed, same sample.
 """
@@ -36,8 +55,16 @@ from urllib.parse import urlsplit, urlunsplit
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+import base64  # noqa: E402
+
 from agentidprobe.models import Outcome  # noqa: E402
 from agentidprobe.store import RunStore  # noqa: E402
+
+AUDITOR_VERSION = 2
+
+# Our own access policy withheld these, so they are not observations of the host (R4).
+_NOT_OBSERVED = {"robots_disallowed", "opted_out"}
+_CEILING = "host has already received"
 
 # Fixed so the sample is a property of the run and not of the day it was audited. Written into
 # the output, so a reader can reproduce the same hundred verdicts.
@@ -74,19 +101,87 @@ def _identifier_from_metadata_url(url: str) -> set[str]:
     return {base, base + "/"} if not base.endswith("/") else {base, base.rstrip("/")}
 
 
-def _check_c05(report, evidence: dict, artefacts: dict) -> tuple[bool, str]:
-    """C05 fails when an authorizing endpoint serves no protected-resource metadata.
+def _prm_candidates(resource: str, evidence: dict) -> list[str]:
+    """The locations a client consults, in order, written from the clauses.
 
-    Warranted only if no candidate location answered with a usable document. Re-derived from
-    the raw artefacts rather than from the verdict, which is the point.
+    RFC 9728 3.1 inserts the well-known suffix between host and path after removing a
+    terminating slash, and MCP 2025-11-25 has a client fall back to the root form. A
+    WWW-Authenticate hint, when the probe followed it, comes first.
     """
+    prefix = "/.well-known/oauth-protected-resource"
+    parts = urlsplit(resource)
+    origin = f"{parts.scheme}://{parts.netloc}"
+    path = parts.path.rstrip("/")
+    candidates = [f"{origin}{prefix}{path}"] if path else []
+    candidates.append(f"{origin}{prefix}")
+    hint = evidence.get("hinted_url_declared")
+    if hint and not evidence.get("hint_rejected_reason"):
+        candidates.insert(0, hint)
+    return list(dict.fromkeys(candidates))
+
+
+def _json_object(record: dict) -> dict | None:
+    try:
+        value = json.loads(base64.b64decode(record.get("body_b64") or "").decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _withheld(record: dict) -> bool:
+    kind = record.get("error_kind", "none")
+    return kind in _NOT_OBSERVED or (
+        kind == "out_of_scope" and (record.get("error_detail") or "").startswith(_CEILING)
+        and not record.get("reused"))
+
+
+def _challenged(report, evidence: dict) -> bool:
+    """RFC 6750 3: a 401, or a 403 carrying WWW-Authenticate, is a challenge."""
+    return report.http_status == 401 or (
+        report.http_status == 403 and bool(evidence.get("www_authenticate")))
+
+
+def _check_c05(report, evidence: dict, artefacts: dict) -> tuple[bool | None, str]:
+    """MCP: a server that challenges MUST publish RFC 9728 metadata, naming at least one
+    authorization server.
+
+    Decided from the raw artefacts, located by URL. Version 1 located them by a label the
+    census never wrote and so decided nothing.
+    """
+    records: dict[str, dict] = {}
     for artefact in artefacts.get(report.endpoint.endpoint_id, []):
-        label = (artefact.get("label") or "").lower()
-        if "protected-resource" not in label and "prm" not in label:
+        records.setdefault(artefact.get("url", ""), artefact)
+    malformed = False
+    withheld: list[str] = []
+    for url in _prm_candidates(report.endpoint.url, evidence):
+        record = records.get(url)
+        if record is None:
             continue
-        if artefact.get("status") == 200:
-            return False, f"a candidate location answered 200: {artefact.get('url')}"
-    return True, "no candidate protected-resource location answered 200"
+        if _withheld(record):
+            withheld.append(url)
+            continue
+        if record.get("status") != 200:
+            continue
+        document = _json_object(record)
+        if document is None:
+            malformed = True
+            continue
+        if withheld:
+            return None, f"a document answered at {url}, but {withheld[0]} before it was withheld"
+        servers = document.get("authorization_servers")
+        named = isinstance(servers, list) and any(
+            isinstance(server, str) and urlsplit(server).scheme in ("https", "http")
+            and urlsplit(server).netloc for server in servers)
+        return (not named), (
+            f"{url} serves a document whose authorization_servers "
+            + ("names an authorization server" if named else "is absent, empty or malformed"))
+    if withheld:
+        return None, f"candidate(s) withheld by the access policy: {'; '.join(withheld)}"
+    if malformed:
+        return True, "a candidate answered 200, but no candidate served a JSON object (R3)"
+    if not _challenged(report, evidence):
+        return None, "the endpoint did not challenge, so C05 should not have applied"
+    return True, "no candidate location answered 200"
 
 
 def _check_c12(report, evidence: dict, artefacts: dict) -> tuple[bool, str]:
@@ -123,7 +218,10 @@ def _check_c12(report, evidence: dict, artefacts: dict) -> tuple[bool, str]:
     permitted = _identifier_from_metadata_url(prm_url)
     if not permitted:
         return None, f"metadata URL not in the 3.1 form: {prm_url}"
-    return declared not in permitted, (
+    # Version 2: both sides canonicalised. Comparing the declared value raw made the auditor
+    # stricter than the rule it audits (R9.2), so it could never report a false positive that
+    # the rule's strictness produced.
+    return _canonical(declared) not in {_canonical(p) for p in permitted}, (
         f"declared {declared!r}; 3.1 inverse of {prm_url!r} permits {sorted(permitted)!r}"
     )
 
@@ -170,7 +268,8 @@ def _check_c13(report, evidence: dict, artefacts: dict) -> tuple[bool, str]:
                        "/.well-known/openid-configuration"):
             if identifier.endswith(suffix):
                 identifier = identifier[: -len(suffix)]
-        if returned != identifier:
+        # Version 2: canonicalised on both sides, for the reason given in `_check_c12`.
+        if not isinstance(returned, str) or _canonical(returned) != _canonical(identifier):
             disagreements.append(f"requested {identifier!r}, returned {returned!r}")
     if not documents:
         return None, "no authorization-server document stored"
@@ -201,7 +300,8 @@ def audit(run_id: str, sample_size: int, root: Path | None = None) -> dict:
         if check.outcome in FAILING and check.check_id.value in CHECKS
     ]
     rng = random.Random(SEED)
-    sample = rng.sample(population, min(sample_size, len(population)))
+    sample = (population if sample_size >= len(population)
+              else rng.sample(population, sample_size))
 
     findings, undecidable = [], []
     by_check: dict[str, dict[str, int]] = {}
@@ -227,6 +327,7 @@ def audit(run_id: str, sample_size: int, root: Path | None = None) -> dict:
 
     return {
         "schema": "agent-id-probe/failure-audit/1",
+        "auditor_version": AUDITOR_VERSION,
         "run_id": run_id,
         "seed": SEED,
         "method": (
@@ -241,7 +342,7 @@ def audit(run_id: str, sample_size: int, root: Path | None = None) -> dict:
         "false_positives": len(findings),
         "undecidable": len(undecidable),
         "findings": findings,
-        "undecidable_cases": undecidable[:20],
+        "undecidable_cases": undecidable,
     }
 
 
@@ -249,10 +350,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--sample", type=int, default=100)
+    parser.add_argument("--all", action="store_true",
+                        help="audit every failing verdict instead of a seeded sample")
     args = parser.parse_args()
 
-    result = audit(args.run_id, args.sample)
-    out = ROOT / "docs" / f"failure-audit-{args.run_id}.json"
+    result = audit(args.run_id, 10**9 if args.all else args.sample)
+    suffix = "-all" if args.all else ""
+    out = ROOT / "docs" / f"failure-audit-{args.run_id}{suffix}.json"
     out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
 
     print(f"population {result['population']:,} failing MUST-level verdicts")

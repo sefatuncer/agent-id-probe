@@ -58,6 +58,24 @@ def _git_commit(root: Path) -> str | None:
         return None
 
 
+def _git_tree_dirty(root: Path) -> bool | None:
+    """Whether tracked source differs from the commit `_git_commit` names.
+
+    A manifest that names a commit while the code that ran had uncommitted edits names the
+    wrong code. Recorded beside the commit since 3 October 2026, so a re-score can say which
+    instrument produced it (H2-M7).
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no",
+             "--", "src", "scripts"],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        return bool(out.stdout.strip()) if out.returncode == 0 else None
+    except Exception:  # noqa: BLE001 - provenance is nice to have, not required to run
+        return None
+
+
 def _default_run_id() -> str:
     return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
@@ -371,7 +389,8 @@ async def _cmd_rescore(args: argparse.Namespace) -> int:
     destination = RunStore(root, args.into or f"{args.run_id}-rescored")
     print(f"re-scoring {len(stored)} reports from stored artefacts "
           f"(no network) into {destination.run_dir}")
-    rescored = await rescore(source, destination, DEFAULT_CONFIG)
+    replay_stats: dict = {}
+    rescored = await rescore(source, destination, DEFAULT_CONFIG, stats=replay_stats)
 
     destination.write_manifest(
         RunContext(
@@ -382,10 +401,12 @@ async def _cmd_rescore(args: argparse.Namespace) -> int:
         ),
         extra={
             "stage": "rescore",
+            "probe_tree_dirty": _git_tree_dirty(root),
             "rescored_from": args.run_id,
             "rescore_probe_version": PROBE_VERSION,
             "reports_in": len(stored),
             "reports_out": len(rescored),
+            **replay_stats,
         },
     )
 

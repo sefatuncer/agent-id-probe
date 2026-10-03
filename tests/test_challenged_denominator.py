@@ -36,7 +36,15 @@ from agentidprobe.models import (
 C05 = CheckId.PRM_PRESENT
 
 
-def _report(eid: str, status: int | None, outcome: Outcome, apex: str = "example.com"):
+# A 403 is a challenge only when it carries the header RFC 6750 Section 3 requires (H2-M1,
+# 3 October 2026), so the 403 challengers in these populations carry one.
+BEARER = {"www_authenticate": 'Bearer resource_metadata="https://example.com/x"'}
+
+
+def _report(eid: str, status: int | None, outcome: Outcome, apex: str = "example.com",
+            evidence: dict | None = None):
+    if evidence is None:
+        evidence = BEARER if status == 403 else {}
     return EndpointReport(
         endpoint=Endpoint(
             endpoint_id=eid,
@@ -59,7 +67,7 @@ def _report(eid: str, status: int | None, outcome: Outcome, apex: str = "example
                 spec_url="https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization",
             )
         ],
-        evidence={},
+        evidence=evidence,
         probed_at=datetime(2026, 7, 30, tzinfo=UTC),
         run_id="test",
     )
@@ -92,6 +100,19 @@ def test_challenge_statuses_are_only_401_and_403():
     assert challenged(_report("b", 403, Outcome.PASS))
     for status in (200, 400, 404, 405, 406, 500, None):
         assert not challenged(_report("c", status, Outcome.PASS)), status
+
+
+def test_a_bare_403_is_not_a_challenge():
+    """H2-M1. Every 403 in the census lacked WWW-Authenticate, and the outcome taxonomy calls
+    a 403 an access block, yet `challenged()` admitted twenty of them to C05's primary
+    denominator and fourteen were convicted there. Reverting the rule fails this."""
+    assert not challenged(_report("bare", 403, Outcome.FAIL_UNIMPLEMENTED, evidence={}))
+    assert not challenged(_report("empty", 403, Outcome.PASS,
+                                  evidence={"www_authenticate": ""}))
+    assert challenged(_report("bearer", 403, Outcome.PASS))
+    # A 401 needs no header to count: it is a challenge by status, and whether it carries
+    # the header RFC 6750 requires is a separate measurement.
+    assert challenged(_report("plain401", 401, Outcome.PASS, evidence={}))
 
 
 def test_the_two_denominators_are_not_the_same_population(mixed_population):

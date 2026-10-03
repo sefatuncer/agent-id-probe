@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from urllib.parse import urlsplit, urlunsplit
 
 from .config import as_metadata_candidate_urls, prm_candidate_urls
-from .fetcher import ErrorKind, Fetcher, FetchResult
+from .fetcher import ErrorKind, Fetcher, FetchResult, is_ceiling_refusal
 from .jcs import canonicalize
 from .models import CheckId, CheckResult, NormativeStrength, Outcome
 
@@ -524,13 +524,28 @@ async def probe_oauth(
             reason = "not observed: excluded by robots.txt (R4, ETHICS.md 6)"
         else:
             reason = f"not observed: {initial.error_kind.value} (R4/R5)"
+        # The refusal's own detail travels beside the reason, which stays a fixed string
+        # because `analysis.unreachable_composition` keys on it. It is how a stored report
+        # says that our per-host ceiling, not the host, kept this endpoint from being asked,
+        # which the per-host sampling weights need (`analysis.ceiling_refused`).
         for cid in _MUST_STAGES:
-            add(cid, Outcome.ERROR, NormativeStrength.MUST, detail=reason)
-        add(CheckId.PKCE_DECLARED, Outcome.ERROR, NormativeStrength.SHOULD, detail=reason)
+            add(cid, Outcome.ERROR, NormativeStrength.MUST, detail=reason,
+                observed_value=initial.error_detail or None)
+        add(CheckId.PKCE_DECLARED, Outcome.ERROR, NormativeStrength.SHOULD, detail=reason,
+            observed_value=initial.error_detail or None)
         return checks, ev
 
-    ev.requires_authorization = initial.status in (401, 403)
     ev.www_authenticate = initial.headers.get("www-authenticate")
+    # A challenge is a 401, or a 403 that carries the WWW-Authenticate header RFC 6750
+    # Section 3 requires of a resource server refusing a request for want of credentials.
+    # Until 3 October 2026 every 403 counted, so twenty endpoints answering a bare 403 to an
+    # unauthenticated GET entered C05's challenged denominator and fourteen were convicted
+    # there, while the manuscript's outcome taxonomy calls a 403 an access block. A bare 403
+    # whose body shows the origin answered is now treated like any other answer that did not
+    # challenge: its metadata is still requested (R10.7), and absent metadata it is
+    # NOT_APPLICABLE. `analysis.challenged()` applies the same rule to stored reports.
+    ev.requires_authorization = initial.status == 401 or (
+        initial.status == 403 and bool(ev.www_authenticate))
 
     # C11 - TLS. Emitted for every reachable endpoint rather than only for authorizing
     # ones: MCP requires HTTPS unconditionally, so unlike the OAuth checks this one does
@@ -641,6 +656,13 @@ async def probe_oauth(
     prm_doc: dict | None = None
     malformed: FetchResult | None = None
     robots_excluded: list[str] = []
+    # Candidates our own per-host request ceiling refused. Not an observation of the origin,
+    # so they are handled exactly as robots exclusions are (H2-M1, 3 October 2026).
+    ceiling_withheld: list[str] = []
+    # A document answered at a later candidate while an earlier one, which a client would
+    # have tried first, was withheld by our own policy. What a client would have read is then
+    # unknown, so the document is not scored against the operator.
+    withheld_before_document: str | None = None
     for candidate in candidates:
         result = await fetcher.fetch(candidate)
         if result.error_kind is ErrorKind.BLOCKED:
@@ -655,6 +677,9 @@ async def probe_oauth(
             # promises the opposite, and R4 forbids it.
             robots_excluded.append(candidate)
             continue
+        if is_ceiling_refusal(result):
+            ceiling_withheld.append(candidate)
+            continue
         if result.status == 200:
             parsed = _parse_json(result)
             if parsed is None:
@@ -664,9 +689,27 @@ async def probe_oauth(
                 if malformed is None:
                     malformed = result
                 continue
+            if robots_excluded or ceiling_withheld:
+                withheld_before_document = candidate
+                break
             prm_doc = parsed
             ev.prm_url = candidate
             break
+
+    def not_observed(detail: str, urls: list[str]) -> tuple[list[CheckResult], OAuthEvidence]:
+        ev.robots_excluded_urls = list(robots_excluded)
+        for cid in _MUST_STAGES:
+            add(cid, Outcome.ERROR, NormativeStrength.MUST, spec_url=SPEC_RFC9728,
+                observed_value="; ".join(urls), detail=detail)
+        add(CheckId.PKCE_DECLARED, Outcome.ERROR, NormativeStrength.SHOULD,
+            spec_url=SPEC_RFC9728, observed_value="; ".join(urls), detail=detail)
+        return checks, ev
+
+    if withheld_before_document is not None:
+        return not_observed(
+            "not observed: a candidate location a client tries before "
+            f"{withheld_before_document} was withheld by our access policy (R4)",
+            robots_excluded + ceiling_withheld)
 
     if prm_doc is None:
         if not ev.requires_authorization:
@@ -690,26 +733,22 @@ async def probe_oauth(
                        "and this endpoint shows no sign of using it",
                 spec_ref="MCP Authorization", spec_url=SPEC_MCP)
             return checks, ev
+        if robots_excluded:
+            # Absence we were not allowed to look for is not absence. This leaves the
+            # study rather than counting against the operator (denominator rules, R4).
+            # Checked before the malformed case since 3 October 2026: a 200 that does not
+            # parse at one candidate says nothing about the candidate we did not ask.
+            return not_observed("not observed: excluded by robots.txt (R4, ETHICS.md 6)",
+                                robots_excluded)
+        if ceiling_withheld:
+            return not_observed("not observed: our own per-host request ceiling was spent "
+                                "(R4)", ceiling_withheld)
         if malformed is not None:
             # R3: 200 with an unparseable body is misimplementation, not absence.
             add(CheckId.PRM_PRESENT, Outcome.FAIL_MISIMPLEMENTED, NormativeStrength.MUST,
                 spec_ref="RFC 9728 3.2", spec_url=SPEC_RFC9728,
                 detail="200 response was not a JSON object at any candidate location",
                 evidence_sha256=malformed.body_sha256)
-        elif robots_excluded:
-            # Absence we were not allowed to look for is not absence. This leaves the
-            # study rather than counting against the operator (denominator rules, R4).
-            ev.robots_excluded_urls = list(robots_excluded)
-            for cid in _MUST_STAGES:
-                add(cid, Outcome.ERROR, NormativeStrength.MUST,
-                    spec_url=SPEC_RFC9728,
-                    observed_value="; ".join(robots_excluded),
-                    detail="not observed: excluded by robots.txt (R4, ETHICS.md 6)")
-            add(CheckId.PKCE_DECLARED, Outcome.ERROR, NormativeStrength.SHOULD,
-                spec_url=SPEC_RFC9728,
-                observed_value="; ".join(robots_excluded),
-                detail="not observed: excluded by robots.txt (R4, ETHICS.md 6)")
-            return checks, ev
         else:
             add(CheckId.PRM_PRESENT, Outcome.FAIL_UNIMPLEMENTED, NormativeStrength.MUST,
                 spec_ref="MCP: servers MUST implement RFC 9728", spec_url=SPEC_MCP,
@@ -816,9 +855,15 @@ async def probe_oauth(
         for candidate in as_metadata_candidate_urls(issuer):
             result = await fetcher.fetch(candidate)
             if result.error_kind in (ErrorKind.BLOCKED, ErrorKind.ROBOTS_DISALLOWED,
-                                     ErrorKind.OPTED_OUT):
+                                     ErrorKind.OPTED_OUT) or is_ceiling_refusal(result):
                 # R4: our own politeness policy must never be written up as the
-                # operator's MUST violation.
+                # operator's MUST violation. The per-host ceiling joined this list on
+                # 3 October 2026: before then a refusal by our own request budget fell
+                # through to "served no metadata", which produced 71 of the census's 136
+                # C13 failures, 51 of them against one issuer that passed for the endpoints
+                # asked about it first. A document this run already holds now answers such
+                # a refusal (`Fetcher.reuse_or_keep`), so this branch is reached only when
+                # the issuer was never retrieved at all.
                 was_blocked = True
                 continue
             if result.status == 200:

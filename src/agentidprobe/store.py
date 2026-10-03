@@ -92,7 +92,7 @@ class RunStore:
             for endpoint in endpoints:
                 handle.write(endpoint.model_dump_json() + "\n")
 
-    ARTIFACT_SCHEMA = 1
+    ARTIFACT_SCHEMA = 2
 
     def append_artifact(self, endpoint_id: str, label: str, result: FetchResult) -> None:
         """Persist a fetched document verbatim so the verdict can be recomputed.
@@ -121,6 +121,10 @@ class RunStore:
             "error_kind": result.error_kind.value,
             "error_detail": result.error_detail,
             "fetched_at": result.fetched_at.isoformat(),
+            # Schema 2 (3 October 2026): a copy answered from this run's own earlier fetch
+            # in place of a ceiling refusal says so, so that nobody reads it as a second
+            # request to the host. Absent in schema-1 records, which means False.
+            "reused": result.reused,
         }
         self._append(self.artifacts_path, record)
 

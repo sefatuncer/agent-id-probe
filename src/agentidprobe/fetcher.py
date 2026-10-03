@@ -20,7 +20,7 @@ import hashlib
 import ssl
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from urllib.parse import urlsplit
@@ -88,6 +88,9 @@ class FetchResult:
     error_kind: ErrorKind = ErrorKind.NONE
     error_detail: str = ""
     fetched_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    # True when this is a copy of a document the same run had already retrieved, returned in
+    # place of a request our own per-host ceiling refused (see `Fetcher.fetch`).
+    reused: bool = False
 
     @property
     def body_sha256(self) -> str | None:
@@ -97,6 +100,30 @@ class FetchResult:
         if not self.final_url:
             return False
         return urlsplit(self.url).netloc != urlsplit(self.final_url).netloc
+
+
+# The detail every per-host ceiling refusal carries, so the refusal can be recognised later
+# from a stored artefact as well as live. A redirect leaving the public web is also
+# OUT_OF_SCOPE but is a property of the response, not of how many requests we had sent.
+CEILING_DETAIL_PREFIX = "host has already received"
+
+
+def is_ceiling_refusal(result: FetchResult) -> bool:
+    """Was this request refused by our own per-host request ceiling?
+
+    Such a refusal says nothing about the host: it records that we had already sent it its
+    quota. Until 3 October 2026 the OAuth checks read it as "served no metadata" and wrote a
+    MUST-level failure, which a referee found by running the instrument: one issuer declared
+    by eighty endpoints passed for the first twenty-nine and failed for the rest.
+    """
+    return (result.error_kind is ErrorKind.OUT_OF_SCOPE
+            and result.error_detail.startswith(CEILING_DETAIL_PREFIX))
+
+
+def is_metadata_url(url: str) -> bool:
+    """Only well-known metadata documents are shared between endpoints, so only they are
+    worth keeping for reuse."""
+    return "/.well-known/" in urlsplit(url).path
 
 
 def classify_block(status: int | None, headers: dict[str, str], body: bytes) -> bool:
@@ -228,6 +255,10 @@ class Fetcher:
         self._robots: dict[str, Protego | None] = {}
         self._robots_locks: dict[str, asyncio.Lock] = {}
         self._client: httpx.AsyncClient | None = None
+        # The first successful response to each well-known metadata URL this pass, kept so
+        # that a later request for the same URL refused by our own per-host ceiling can be
+        # answered with the document this run already holds (`fetch`).
+        self._documents: dict[str, FetchResult] = {}
         self._host_failures: dict[str, int] = {}
         # Every request this pass has sent to each host, including redirect hops,
         # retries and robots.txt. The published per-host bound is only a bound if
@@ -299,8 +330,30 @@ class Fetcher:
         can escape persistence (see `on_fetch` in __init__).
         """
         result = await self._fetch(url)
+        result = self.reuse_or_keep(url, result, self._documents)
         if self.on_fetch is not None:
             self.on_fetch(result)
+        return result
+
+    @staticmethod
+    def reuse_or_keep(url: str, result: FetchResult,
+                      documents: dict[str, FetchResult]) -> FetchResult:
+        """Answer a ceiling refusal with a document this run already retrieved.
+
+        Many endpoints name the same issuer, and a capped host such as a shared gateway serves
+        one root metadata document for all of them, so the ceiling meant to bound the load on
+        an operator was being spent re-reading a document already in hand and then reported
+        as the operator's failure. Only the first successful response is kept, and only one
+        obtained before the refusal can answer it, which is the rule `ReplayFetcher` applies
+        to a stored run so that a replay reproduces the live verdict. Static so the replay
+        uses this exact code rather than a copy of it.
+        """
+        if (result.status == 200 and result.error_kind is ErrorKind.NONE
+                and not result.reused and is_metadata_url(url)):
+            documents.setdefault(url, result)
+            return result
+        if is_ceiling_refusal(result) and url in documents:
+            return replace(documents[url], reused=True, fetched_at=result.fetched_at)
         return result
 
     def _leaves_the_public_web(self, url: str) -> str | None:
@@ -350,7 +403,7 @@ class Fetcher:
                 >= self.config.rate.max_requests_per_host):
             return FetchResult(
                 url=url, ok=False, error_kind=ErrorKind.OUT_OF_SCOPE,
-                error_detail=f"host has already received "
+                error_detail=f"{CEILING_DETAIL_PREFIX} "
                              f"{self.config.rate.max_requests_per_host} requests this pass")
 
         if is_redirect and (reason := self._leaves_the_public_web(url)) is not None:

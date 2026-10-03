@@ -407,7 +407,8 @@ class Runner:
 
 
 async def rescore(
-    source: RunStore, destination: RunStore, config: MeasurementConfig
+    source: RunStore, destination: RunStore, config: MeasurementConfig,
+    stats: dict | None = None,
 ) -> list[EndpointReport]:
     """Recompute every verdict from stored artefacts, with no network access at all.
 
@@ -424,7 +425,7 @@ async def rescore(
     # The checks read policy off the fetcher (the per-endpoint issuer cap, for one), so a
     # replay under a different configuration is scoring under different rules than the run
     # it claims to reproduce. `config` was accepted here and dropped on the floor.
-    fetcher = ReplayFetcher(artifacts, config=config)
+    fetcher = ReplayFetcher(artifacts, config=config, unrequested_metadata_not_observed=True)
 
     destination.write_corpus(list(corpus.values()))
     out: list[EndpointReport] = []
@@ -470,6 +471,17 @@ async def rescore(
         destination.append_report(rescored)
         out.append(rescored)
 
+    if stats is not None:
+        stats.update({
+            "ceiling_refusals_answered_from_run": fetcher.reused,
+            "unrequested_metadata_answered_from_run": fetcher.unrequested_answered,
+            "unrequested_metadata_not_observed": fetcher.unrequested_not_observed,
+        })
+    if fetcher.reused or fetcher.unrequested_answered or fetcher.unrequested_not_observed:
+        print(f"  ceiling refusals answered from the run's own documents: {fetcher.reused}; "
+              f"metadata the stored run never requested: {fetcher.unrequested_answered} "
+              f"answered from its own documents, {fetcher.unrequested_not_observed} not "
+              f"observed")
     return out
 
 

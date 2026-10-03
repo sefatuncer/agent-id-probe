@@ -1,0 +1,67 @@
+{
+  "schema": "agent-id-probe/conformance-fixture/1",
+  "id": "c12-conforming-hint-document-names-the-request-url",
+  "modality": "oauth_metadata",
+  "title": "Document found through the WWW-Authenticate hint names the URL the client requested",
+  "exercises": {
+    "C12": "conforming"
+  },
+  "decision_rules": [
+    "R9.1",
+    "R9.3"
+  ],
+  "rationale": "The hint path is governed by the second paragraph of RFC 9728 Section 3.3, which compares against the URL the client used, not the identifier the document was served under. The referee who ran the instrument found that this branch produced 27.9% of C12 failures and that no fixture exercised it, so the conforming case is pinned here: a root-form hint whose document names the requested URL passes, although the identifier recovered from the location would be the origin.",
+  "spec": [
+    {
+      "source": "RFC 9728",
+      "section": "3.3, second paragraph",
+      "url": "https://www.rfc-editor.org/rfc/rfc9728.html#section-3.3-2",
+      "quote": "If the protected resource metadata was retrieved from a URL returned by the protected resource via the WWW-Authenticate resource_metadata parameter, then the `resource` value returned MUST be identical to the URL that the client used to make the request to the resource server. If these values are not identical, the data contained in the response MUST NOT be used.",
+      "verification": "verbatim-verified against rfc-editor.org (txt and html) on 2026-10-03"
+    }
+  ],
+  "endpoint": {
+    "url": "https://api.example.org/mcp",
+    "response": {
+      "status": 401,
+      "headers": {
+        "www-authenticate": "Bearer resource_metadata=\"https://api.example.org/.well-known/oauth-protected-resource\""
+      }
+    }
+  },
+  "documents": [
+    {
+      "url": "https://api.example.org/.well-known/oauth-protected-resource",
+      "status": 200,
+      "json": {
+        "resource": "https://api.example.org/mcp",
+        "authorization_servers": [
+          "https://auth.example.org"
+        ]
+      },
+      "comment": "served at the location the WWW-Authenticate hint names"
+    },
+    {
+      "url": "https://auth.example.org/.well-known/oauth-authorization-server",
+      "status": 200,
+      "json": {
+        "issuer": "https://auth.example.org",
+        "code_challenge_methods_supported": [
+          "S256"
+        ]
+      },
+      "comment": "conforming, so only C12 is under test"
+    }
+  ],
+  "expect": {
+    "checks": {
+      "C12": "pass",
+      "C05": "pass"
+    },
+    "evidence": {
+      "prm_from_hint": true,
+      "resource_relation": "identical",
+      "declared_resource": "https://api.example.org/mcp"
+    }
+  }
+}

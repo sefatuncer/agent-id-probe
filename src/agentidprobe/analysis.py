@@ -469,20 +469,31 @@ def _collapse_to_one_per(reports: list, unit: str) -> list:
     return list(chosen.values())
 
 
-#: The only two answers that are an authorization challenge. RFC 9728 3.1 hangs the
-#: metadata requirement on the challenge, so this is the population C05's specification
-#: sentence actually addresses.
+#: The two statuses an authorization challenge can carry. RFC 9728 3.1 hangs the metadata
+#: requirement on the challenge, so this is the population C05's specification sentence
+#: addresses. Which 403s count is decided by `challenged`, not by membership here.
 CHALLENGE_STATUSES = (401, 403)
 
 
 def challenged(report) -> bool:
     """Did this endpoint answer with an authorization challenge?
 
+    A 401, or a 403 carrying the WWW-Authenticate header RFC 6750 Section 3 requires of a
+    resource server refusing an unauthenticated request. Until 3 October 2026 every 403
+    counted, although none in the census carried the header and the manuscript's outcome
+    taxonomy calls a 403 an access block, so twenty endpoints entered C05's primary
+    denominator on a response that challenged nobody and fourteen were convicted there
+    (H2-M1). `checks_oauth.probe_oauth` applies the same rule when it scores.
+
     Kept separate from `OAuthEvidence.requires_authorization` on purpose: that field is
-    set during scoring and is not what a reader can check, whereas the first response's
-    status code is in every stored report and in every raw artefact.
+    set during scoring, whereas the status code and the header are in every stored report
+    and in every raw artefact, so a reader can check this without trusting the scorer.
     """
-    return report.http_status in CHALLENGE_STATUSES
+    if report.http_status == 401:
+        return True
+    if report.http_status == 403:
+        return bool((report.evidence or {}).get("www_authenticate"))
+    return False
 
 
 def rate_by_unit(reports: list, check_id, unit: str, conf: float = 0.95,
@@ -611,26 +622,101 @@ def challenge_share(reports: list, check_id) -> dict:
     }
 
 
+def ceiling_refused(report) -> bool:
+    """Was this endpoint never asked, because our own per-host ceiling was already spent?
+
+    `checks_oauth` writes the refusal's own detail into `observed_value` beside the
+    unchanged "not observed: out_of_scope" detail, so this is read from the stored report and
+    not inferred. A redirect leaving the public web is also out of scope but is an answer
+    from the host, so it is not counted here.
+    """
+    from .fetcher import CEILING_DETAIL_PREFIX, ErrorKind
+
+    marker = f"not observed: {ErrorKind.OUT_OF_SCOPE.value} (R4/R5)"
+    return any(check.detail == marker
+               and (check.observed_value or "").startswith(CEILING_DETAIL_PREFIX)
+               for check in report.checks)
+
+
+def per_host_sampling(reports: list, not_sampled_by_host: dict[str, int]) -> dict:
+    """The per-host sample as it was actually drawn: frame, sampled, contacted, answered.
+
+    Section 9.6 described the per-host rule as taking 25 endpoints from each large host. A
+    referee who ran the instrument found that 144 of the 375 endpoints sampled on the capped
+    hosts were never asked, because the same host's 30-request ceiling was spent first, so
+    the largest host was measured through nine endpoints, and that the ceiling also left
+    endpoints unasked on hosts the sampling rule never touched (H2-M4). The weights that
+    estimate what the cap costs were computed as if all 25 had been asked. This table is
+    what they are now computed from, and it is published beside them.
+    """
+    from urllib.parse import urlsplit
+
+    from .models import Modality
+
+    rows: dict[str, dict] = {}
+    seen: set[str] = set()
+    for report in reports:
+        if report.modality is not Modality.OAUTH_METADATA:
+            continue
+        if report.endpoint.endpoint_id in seen:
+            continue
+        seen.add(report.endpoint.endpoint_id)
+        host = urlsplit(report.endpoint.url).hostname or ""
+        row = rows.setdefault(host, {"sampled": 0, "contacted": 0, "answered": 0})
+        row["sampled"] += 1
+        if not ceiling_refused(report):
+            row["contacted"] += 1
+        if report.reachable:
+            row["answered"] += 1
+    for host, row in rows.items():
+        row["frame"] = row["sampled"] + int(not_sampled_by_host.get(host, 0))
+
+    under = {h: r for h, r in rows.items() if r["frame"] > r["contacted"]}
+    capped = {h: r for h, r in under.items() if not_sampled_by_host.get(h)}
+    uncapped = {h: r for h, r in under.items() if not not_sampled_by_host.get(h)}
+    weights = {h: r["frame"] / r["contacted"] for h, r in under.items() if r["contacted"]}
+    largest = max(capped.items(), key=lambda kv: kv[1]["frame"], default=None)
+    return {
+        "hosts": dict(sorted(under.items())),
+        "capped_hosts": len(capped),
+        "capped_sampled": sum(r["sampled"] for r in capped.values()),
+        "capped_contacted": sum(r["contacted"] for r in capped.values()),
+        "capped_never_contacted": sum(r["sampled"] - r["contacted"] for r in capped.values()),
+        "uncapped_hosts_refused": len(uncapped),
+        "uncapped_never_contacted": sum(r["sampled"] - r["contacted"]
+                                        for r in uncapped.values()),
+        "never_contacted": sum(r["sampled"] - r["contacted"] for r in rows.values()),
+        "hosts_never_contacted_at_all": sorted(h for h, r in under.items() if not r["contacted"]),
+        "largest_host": ({"host": largest[0], **largest[1]} if largest else None),
+        "largest_weight": max(weights.values(), default=1.0),
+        "weights": dict(sorted(weights.items())),
+    }
+
+
 def sampling_bias(reports: list, check_id, not_sampled_by_host: dict[str, int],
-                  cap: int) -> dict:
-    """What the per-host cap costs the endpoint-unit rate, measured rather than asserted.
+                  cap: int, *, frame_reports: list | None = None) -> dict:
+    """What the per-host limits cost the endpoint-unit rate, measured rather than asserted.
 
-    Section 9.6 claimed the sampling bias has "a known sign" and gave no number, in a
-    sentence whose own reasoning said the opposite -- an uncapped rate would be pulled
-    toward "whatever a handful of large platforms happen to do" is a statement that the
-    direction depends on facts nobody had looked up. They are lookable-up: the endpoints
-    measured on a capped host are a deterministic selection by identifier, so under the
-    assumption that they are exchangeable with their host's unmeasured remainder, each one
-    stands for `frame / measured` of that host and the uncapped rate can be estimated.
+    Section 9.6 claimed the sampling bias has "a known sign" and gave no number. Under the
+    assumption that the endpoints measured on a host are exchangeable with its unmeasured
+    remainder, each one stands for `frame / contacted` of that host, and the uncapped rate
+    can be estimated. The assumption is the whole of what this rests on and it is not
+    testable from inside a host, since the remainder was never asked. It is stated in the
+    manuscript beside the number.
 
-    The assumption is the whole of what this rests on and it is not testable from inside a
-    capped host, since the remainder was never asked. It is stated in the manuscript beside
-    the number.
+    The weight was `(cap + dropped) / cap` until 3 October 2026, which assumed every sampled
+    endpoint had been asked. The per-host request ceiling refused many of them first, so the
+    weight is now taken from `per_host_sampling`, over `frame_reports` (by default `reports`)
+    so that a caller filtering the population, as C05's challenged arm does, still weights by
+    what was asked of the whole host. `cap` is kept for the record and no longer used.
     """
     from urllib.parse import urlsplit
 
     from .models import Outcome
 
+    del cap
+    weights = per_host_sampling(frame_reports if frame_reports is not None else reports,
+                                not_sampled_by_host)["weights"]
     applicable = [
         r for r in reports
         if r.robots_allowed and not r.opted_out and not r.crossed_origin()
@@ -650,14 +736,10 @@ def sampling_bias(reports: list, check_id, not_sampled_by_host: dict[str, int],
     weighted_k = weighted_n = 0.0
     capped_k = capped_n = 0
     for host, (k, n) in measured.items():
-        dropped = not_sampled_by_host.get(host, 0)
-        # The frame holds the endpoints the cap admitted plus the ones it dropped. Only
-        # those admitted and applicable are in `n`, so the weight is per applicable
-        # observation rather than per admitted one.
-        weight = (cap + dropped) / cap if dropped else 1.0
+        weight = weights.get(host, 1.0)
         weighted_k += k * weight
         weighted_n += n * weight
-        if dropped:
+        if weight != 1.0:
             capped_k += k
             capped_n += n
 
@@ -670,7 +752,7 @@ def sampling_bias(reports: list, check_id, not_sampled_by_host: dict[str, int],
         "uncapped_rate": uncapped_k / uncapped_n if uncapped_n else None,
         "capped_n": capped_n,
         "uncapped_n": uncapped_n,
-        "capped_hosts_measured": sum(1 for h in measured if not_sampled_by_host.get(h)),
+        "capped_hosts_measured": sum(1 for h in measured if weights.get(h, 1.0) != 1.0),
     }
 
 
@@ -1085,6 +1167,77 @@ def manski_bounds(p_hat: float, unobserved: int, observed: int) -> tuple[float, 
     return (low, min(1.0, low + b))
 
 
+def _zero_bound_by_domain(documents: dict, predicate) -> dict:
+    """k, the domains the documents fall on, the exact one-sided 95% bound when k is zero,
+    and how much of the population the two largest domains hold."""
+    by_domain: dict[str, int] = {}
+    k = 0
+    for issuer, document in documents.items():
+        domain = _apex(issuer) or issuer
+        by_domain[domain] = by_domain.get(domain, 0) + 1
+        k += bool(predicate(document))
+    m = len(by_domain)
+    top_two = sorted(by_domain.values(), reverse=True)[:2]
+    return {
+        "k": k, "n": len(documents), "m": m,
+        "upper_exact": (1.0 - 0.05 ** (1.0 / m)) if (k == 0 and m) else None,
+        "top_two_domains_issuers": sum(top_two),
+        "top_two_domains_share": (sum(top_two) / len(documents)) if documents else None,
+    }
+
+
+def served_under_sensitivity(reports: list, conf: float = 0.95) -> dict:
+    """C12 if a document found through the WWW-Authenticate hint were judged by the first
+    paragraph of RFC 9728 Section 3.3 rather than the second.
+
+    The instrument applies the second paragraph to the hint path, as R9.1 fixed before
+    collection: the returned `resource` must equal the URL the client requested. The
+    manuscript described only the first paragraph, and a referee who ran the instrument
+    showed that 232 C12 failures rest on the difference, every one on the hint path, and
+    that the same configuration is convicted or acquitted depending on whether the server
+    sends the hint (H2-M2). Where the hint names a URL in well-known form, the identifier it
+    was served under is recoverable, so the alternative reading is computable. It is reported
+    as a sensitivity pair and the catalogue lists the path dependence (U10). Nothing here
+    changes a published verdict.
+    """
+    from .checks_oauth import _identity_outcome, _relation, identifier_from_metadata_url
+    from .models import CheckId, Outcome
+
+    check_id = CheckId.PRM_RESOURCE_IDENTITY_MATCH
+    adjusted = []
+    hint_scored = to_pass = to_fail = 0
+    for report in reports:
+        evidence = report.evidence or {}
+        c12 = next((c for c in report.checks if c.check_id is check_id), None)
+        alternative = identifier_from_metadata_url(evidence.get("prm_url") or "")
+        if (c12 is None or not evidence.get("prm_from_hint") or alternative is None
+                or not isinstance(evidence.get("declared_resource"), str)):
+            adjusted.append(report)
+            continue
+        hint_scored += 1
+        outcome = _identity_outcome(_relation(evidence["declared_resource"], alternative),
+                                    expectation_is_observed=False)
+        if outcome is c12.outcome:
+            adjusted.append(report)
+            continue
+        if outcome is Outcome.PASS:
+            to_pass += 1
+        elif c12.outcome is Outcome.PASS:
+            to_fail += 1
+        replaced = c12.model_copy(update={"outcome": outcome})
+        adjusted.append(report.model_copy(update={
+            "checks": [replaced if c is c12 else c for c in report.checks]}))
+    return {
+        "hint_documents_in_well_known_form": hint_scored,
+        "fail_to_pass": to_pass,
+        "pass_to_fail": to_fail,
+        "published": {unit: rate_by_unit(reports, check_id, unit, conf).as_record()
+                      for unit in ("endpoint", "apex")},
+        "served_under": {unit: rate_by_unit(adjusted, check_id, unit, conf).as_record()
+                         for unit in ("endpoint", "apex")},
+    }
+
+
 def exposure_analysis(reports: list, conf: float = 0.95) -> dict:
     """The intersection the paper's thesis is about, which nothing computed until now.
 
@@ -1296,6 +1449,15 @@ def exposure_analysis(reports: list, conf: float = 0.95) -> dict:
             _publishes_protected_resources, {i: d for i, d in crossing_docs.items() if d}),
         "c16_crossing_observed": _rate(
             _advertises_iss, {i: d for i, d in crossing_docs.items() if d}),
+        # The zero's bound over the decision units the zero was observed on. Issuers on one
+        # registrable domain share the decision to publish, so the domain is the unit, and
+        # the bound must be taken over the domains whose issuers were actually read: the
+        # manuscript took it over every domain a crossing declaration reaches, twelve of
+        # which contributed no document at all (H2-M5, 3 October 2026). The bound is the
+        # exact one-sided binomial at 95%, 1 - 0.05^(1/m), which is what had been printed
+        # under the name "rule of three" (3/m, an approximation to it).
+        "c18_crossing_observed_domains": _zero_bound_by_domain(
+            {i: d for i, d in crossing_docs.items() if d}, _publishes_protected_resources),
         "c16_all": _rate(_advertises_iss, documents),
         "c18_all": _rate(_publishes_protected_resources, documents),
         "c18_crossing_contrast": _contingency(_publishes_protected_resources),
@@ -2139,12 +2301,23 @@ def analyse(reports: list, conf: float = 0.95, sampling: dict | None = None) -> 
         "unreachable": unreachable,
         "manski": manski,
         "identifier_sensitivity": identifier_comparison_sensitivity(reports),
-        "sampling_bias": {
+        "served_under_sensitivity": served_under_sensitivity(reports, conf),
+        "sampling_bias": ({
             check.value: sampling_bias(reports, check, sampling["not_sampled_by_host"],
                                        int(sampling["max_endpoints_per_host"]))
             for check in (CheckId.PRM_PRESENT, CheckId.PRM_RESOURCE_IDENTITY_MATCH,
                           CheckId.AS_CORRESPONDENCE)
-        } if sampling and sampling.get("not_sampled_by_host") else None,
+        } | {
+            # C05 over its primary population, the endpoints that challenged, weighted by
+            # what was asked of each whole host. The manuscript prints this one, and until
+            # 3 October 2026 nothing in the artefact produced it (H2-M4, H2-M7).
+            f"{CheckId.PRM_PRESENT.value}-challenged": sampling_bias(
+                [r for r in reports if challenged(r)], CheckId.PRM_PRESENT,
+                sampling["not_sampled_by_host"], int(sampling["max_endpoints_per_host"]),
+                frame_reports=reports),
+        }) if sampling and sampling.get("not_sampled_by_host") else None,
+        "per_host_sampling": (per_host_sampling(reports, sampling["not_sampled_by_host"])
+                              if sampling and sampling.get("not_sampled_by_host") else None),
         # --- quantities the fourth review round asked for, all from stored evidence ----
         "mixup_carriers": mixup_defence_carriers(reports, conf),
         "challenge_evidence": challenge_evidence(reports),
