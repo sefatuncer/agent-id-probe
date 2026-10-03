@@ -565,7 +565,7 @@ which happen outside any endpoint context.
 | `body_b64` | string | Base64 of the response body, capped at 5 MiB (`max_response_bytes`). Empty string when there was no body |
 | `body_sha256` | string \| null | SHA-256 of exactly those stored bytes. **Null when the body is empty.** Join key to `checks[].evidence_sha256` |
 | `elapsed_ms` | float \| null | Wall-clock time for this fetch |
-| `error_kind` | enum | `none` · `timeout` · `dns` · `tls` · `connection` · `blocked` · `too_large` · `robots_disallowed` · `opted_out` · `other` |
+| `error_kind` | enum | `none` · `timeout` · `dns` · `tls` · `connection` · `blocked` · `too_large` · `robots_disallowed` · `opted_out` · `out_of_scope` · `other`. `out_of_scope` is our own decision: a redirect off the public web, or a request the per-host ceiling refused, whose `error_detail` begins "host has already received" |
 | `error_detail` | string | Human-readable detail; `""` when there was no error |
 | `fetched_at` | string (ISO 8601) | When this response arrived |
 | `reused` | boolean | `true` when the record is the run's own earlier copy of this metadata URL, returned in place of a request the per-host ceiling refused, so no request was sent. Absent (meaning `false`) in version 1 records |

@@ -99,7 +99,7 @@ def sample_per_host(endpoints: list, cap: int) -> tuple[list, dict[str, int]]:
 
     Written on 30 July 2026, after the narrow-slice rehearsal showed the census could not
     run as configured. The corpus is 10,653 endpoints on 7,681 hostnames, but the shape is
-    extremely uneven: `gateway.pipeworx.io` alone carries 1,281 of them, and 2,015 endpoints
+    extremely uneven: one hostname alone carries 1,281 of them, and 2,015 endpoints
     sit on the 11 hostnames with more than 30 each.
 
     `RatePolicy.max_requests_per_host` caps one host at 30 requests per pass, which is the
@@ -432,7 +432,7 @@ async def rescore(
 
     for report in stored:
         endpoint = corpus.get(report.endpoint.endpoint_id, report.endpoint)
-        fetcher.bind(endpoint.endpoint_id)
+        fetcher.bind(endpoint.endpoint_id, endpoint.url)
         try:
             initial = await fetcher.fetch(endpoint.url)
         except ArtefactMissing:

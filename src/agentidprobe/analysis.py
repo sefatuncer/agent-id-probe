@@ -1106,33 +1106,36 @@ def issuer_documents(reports: list, denominator: str) -> dict[str, dict | None]:
     if denominator not in ("declared", "observed"):
         raise ValueError(f"unknown denominator: {denominator}")
 
+    # Each issuer is a retrieved document, a request that was sent and answered with nothing
+    # usable, or a request our own side never sent. Only the first two are observations.
+    # Until 3 October 2026 the third was read off `as_not_fetched` alone, so an issuer that
+    # robots.txt, an access block or our request ceiling kept us from asking entered the
+    # declared denominator as "does not advertise": 54 of the census's 69 unobserved issuers,
+    # moving C16 and C17. "Not observed" is what `checks_oauth` writes for every such case.
     documents: dict[str, dict | None] = {}
-    withheld: set[str] = set()
-    for report in reports:
-        evidence = report.evidence or {}
-        for issuer in (evidence.get("as_not_fetched") or {}):
-            if isinstance(issuer, str):
-                withheld.add(issuer)
-
+    requested: set[str] = set()
     for report in reports:
         evidence = report.evidence or {}
         as_documents = evidence.get("as_documents") or {}
+        as_errors = evidence.get("as_errors") or {}
+        not_fetched = evidence.get("as_not_fetched") or {}
         for issuer in evidence.get("authorization_servers") or []:
             if not isinstance(issuer, str):
                 continue
             doc = as_documents.get(issuer)
-            # Withheld by our own policy for *every* endpoint that named it. An issuer one
-            # resource declared past the cap and another declared inside it was still
-            # observed, so it stays: the two loops are separate because the exclusion is a
-            # property of the issuer across the corpus, not of one declaration.
-            if issuer in withheld and not isinstance(doc, dict):
+            if isinstance(doc, dict):
+                # First document wins, deterministically: the same issuer serves the same
+                # document to every resource that names it.
+                if not isinstance(documents.get(issuer), dict):
+                    documents[issuer] = doc
                 continue
-            if doc is None and denominator == "observed":
+            if issuer in not_fetched or "not observed" in str(as_errors.get(issuer, "")):
                 continue
-            # First document wins, deterministically: the same issuer serves the same
-            # document to every resource that names it, and if it does not, that is a
-            # finding for the topology rather than a reason to count the issuer twice.
-            documents.setdefault(issuer, doc if isinstance(doc, dict) else None)
+            if issuer in as_errors:
+                requested.add(issuer)
+    if denominator == "declared":
+        for issuer in sorted(requested):
+            documents.setdefault(issuer, None)
     return documents
 
 
@@ -1205,7 +1208,7 @@ def served_under_sensitivity(reports: list, conf: float = 0.95) -> dict:
 
     check_id = CheckId.PRM_RESOURCE_IDENTITY_MATCH
     adjusted = []
-    hint_scored = to_pass = to_fail = 0
+    hint_scored = to_pass = to_fail = via_unspecified = 0
     for report in reports:
         evidence = report.evidence or {}
         c12 = next((c for c in report.checks if c.check_id is check_id), None)
@@ -1220,10 +1223,14 @@ def served_under_sensitivity(reports: list, conf: float = 0.95) -> dict:
         if outcome is c12.outcome:
             adjusted.append(report)
             continue
-        if outcome is Outcome.PASS:
+        # Counted strictly. A move to or from UNSPECIFIED is neither a pass nor a failure
+        # and is counted apart, as review asked.
+        if outcome is Outcome.PASS and c12.outcome is Outcome.FAIL_MISIMPLEMENTED:
             to_pass += 1
-        elif c12.outcome is Outcome.PASS:
+        elif c12.outcome is Outcome.PASS and outcome is Outcome.FAIL_MISIMPLEMENTED:
             to_fail += 1
+        else:
+            via_unspecified += 1
         replaced = c12.model_copy(update={"outcome": outcome})
         adjusted.append(report.model_copy(update={
             "checks": [replaced if c is c12 else c for c in report.checks]}))
@@ -1231,6 +1238,7 @@ def served_under_sensitivity(reports: list, conf: float = 0.95) -> dict:
         "hint_documents_in_well_known_form": hint_scored,
         "fail_to_pass": to_pass,
         "pass_to_fail": to_fail,
+        "to_or_from_unspecified": via_unspecified,
         "published": {unit: rate_by_unit(reports, check_id, unit, conf).as_record()
                       for unit in ("endpoint", "apex")},
         "served_under": {unit: rate_by_unit(adjusted, check_id, unit, conf).as_record()

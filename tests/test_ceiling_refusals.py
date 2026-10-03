@@ -164,7 +164,12 @@ async def test_a_live_run_with_reuse_rescores_to_identical_verdicts(tmp_path):
     urls = [_mock_resource(h) for h in ("a.example.com", "b.example.net", "c.example.io")]
     endpoints = [Endpoint(endpoint_id=endpoint_id(u), url=u, kind=EndpointKind.MCP_REMOTE,
                           source="t", apex_domain=apex_domain(u)) for u in urls]
-    config = _config(3)
+    # One worker, so the first retrieval completes before the refusal it should answer. With
+    # several, a refusal can arrive while the first request is still in flight, which a live
+    # run handles correctly by recording the refusal, and which would make this test flaky.
+    config = MeasurementConfig(rate=RatePolicy(
+        per_host_requests_per_second=1000.0, max_retries=0, backoff_base_s=0.0,
+        max_requests_per_host=3, global_concurrency=1))
     source = RunStore(tmp_path, "live")
     source.write_corpus(endpoints)
     live = await Runner(source, config).run(endpoints, Modality.OAUTH_METADATA)
@@ -222,7 +227,9 @@ async def test_metadata_a_stored_run_never_requested_is_not_observed_or_answered
     lenient.bind("late")
     assert (await lenient.fetch(AS_URL)).reused
     lenient.bind("early")
-    assert is_ceiling_refusal(await lenient.fetch(AS_URL))
+    from agentidprobe.fetcher import is_unrequested
+    assert is_unrequested(await lenient.fetch(AS_URL)), (
+        "a request the stored run never made must say so, not claim the ceiling was spent")
     assert (lenient.unrequested_answered, lenient.unrequested_not_observed) == (1, 1)
 
     strict = ReplayFetcher(artifacts)

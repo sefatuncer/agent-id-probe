@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from urllib.parse import urlsplit, urlunsplit
 
 from .config import as_metadata_candidate_urls, prm_candidate_urls
-from .fetcher import ErrorKind, Fetcher, FetchResult, is_ceiling_refusal
+from .fetcher import ErrorKind, Fetcher, FetchResult, is_ceiling_refusal, is_unrequested
 from .jcs import canonicalize
 from .models import CheckId, CheckResult, NormativeStrength, Outcome
 
@@ -663,6 +663,7 @@ async def probe_oauth(
     # have tried first, was withheld by our own policy. What a client would have read is then
     # unknown, so the document is not scored against the operator.
     withheld_before_document: str | None = None
+    unrequested = False
     for candidate in candidates:
         result = await fetcher.fetch(candidate)
         if result.error_kind is ErrorKind.BLOCKED:
@@ -677,8 +678,10 @@ async def probe_oauth(
             # promises the opposite, and R4 forbids it.
             robots_excluded.append(candidate)
             continue
-        if is_ceiling_refusal(result):
+        if is_ceiling_refusal(result) or is_unrequested(result):
             ceiling_withheld.append(candidate)
+            if is_unrequested(result):
+                unrequested = True
             continue
         if result.status == 200:
             parsed = _parse_json(result)
@@ -741,8 +744,11 @@ async def probe_oauth(
             return not_observed("not observed: excluded by robots.txt (R4, ETHICS.md 6)",
                                 robots_excluded)
         if ceiling_withheld:
-            return not_observed("not observed: our own per-host request ceiling was spent "
-                                "(R4)", ceiling_withheld)
+            return not_observed(
+                "not observed: the stored run never requested this location (replay, R4)"
+                if unrequested else
+                "not observed: our own per-host request ceiling was spent (R4)",
+                ceiling_withheld)
         if malformed is not None:
             # R3: 200 with an unparseable body is misimplementation, not absence.
             add(CheckId.PRM_PRESENT, Outcome.FAIL_MISIMPLEMENTED, NormativeStrength.MUST,
@@ -855,7 +861,8 @@ async def probe_oauth(
         for candidate in as_metadata_candidate_urls(issuer):
             result = await fetcher.fetch(candidate)
             if result.error_kind in (ErrorKind.BLOCKED, ErrorKind.ROBOTS_DISALLOWED,
-                                     ErrorKind.OPTED_OUT) or is_ceiling_refusal(result):
+                                     ErrorKind.OPTED_OUT) or is_ceiling_refusal(result) \
+                    or is_unrequested(result):
                 # R4: our own politeness policy must never be written up as the
                 # operator's MUST violation. The per-host ceiling joined this list on
                 # 3 October 2026: before then a refusal by our own request budget fell
@@ -870,6 +877,12 @@ async def probe_oauth(
                 doc = _parse_json(result)
                 if doc is not None:
                     break
+        if doc is not None and was_blocked:
+            # The rule the protected-resource loop follows, applied here on 3 October 2026
+            # after review: a client tries the RFC 8414 location first, and if our policy
+            # kept us from asking it, a document answered at a later location is not what
+            # that client would have read.
+            doc = None
         if doc is None:
             if was_blocked:
                 blocked.append(issuer)

@@ -37,7 +37,7 @@ Three independent pieces of evidence show that public A2A deployment is close to
 - OpenClaw Experiment 055 (April 2026): 50 agents *advertising* A2A support → valid cards **0–2**, responses to an A2A task request **0** — confirmed at `a2aproject/A2A` issue #1755, *"Active A2A Outbound Probing"*
 - ~~AgentHermes: 500 businesses across 27 sectors → zero `agent-card.json`~~ — **removed 28 July 2026: source not found.** No publication or dataset supporting the "500 businesses / zero cards" statistic could be confirmed. The conclusion already stands on the two independent items above, and a third support that cannot be verified casts doubt on the ones that can
 
-**Recovery:** probing the MCP remote origins for `/.well-known/agent-card.json` produced **25 valid cards (5.3%)** across 472 reachable origins → scaling to 5,154 domains gives roughly 270. Below the threshold but not zero. **A2A can exist only as something derived from the MCP corpus** — and that derivation is itself an original methodological contribution. The cards found belong to long-tail projects (namewhisper.ai, brainonbnb.com) rather than enterprises, so any generalisation claim has to be narrowed accordingly.
+**Recovery:** probing the MCP remote origins for `/.well-known/agent-card.json` produced **25 valid cards (5.3%)** across 472 reachable origins → scaling to 5,154 domains gives roughly 270. Below the threshold but not zero. **A2A can exist only as something derived from the MCP corpus** — and that derivation is itself an original methodological contribution. The cards found belong to long-tail projects (<origin A>, <origin B>) rather than enterprises, so any generalisation claim has to be narrowed accordingly.
 
 ---
 

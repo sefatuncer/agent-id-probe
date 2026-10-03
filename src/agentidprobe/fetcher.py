@@ -120,6 +120,23 @@ def is_ceiling_refusal(result: FetchResult) -> bool:
             and result.error_detail.startswith(CEILING_DETAIL_PREFIX))
 
 
+# The detail a replay gives a metadata request the stored run never made (see `ReplayFetcher`).
+# Our side did not send it, so it is withheld like a ceiling refusal, but it is not one and
+# must not be reported as one.
+UNREQUESTED_DETAIL_PREFIX = "never requested by the stored run"
+
+
+def is_unrequested(result: FetchResult) -> bool:
+    """A request a re-score asked for that the stored run never sent (legacy runs only)."""
+    return (result.error_kind is ErrorKind.OUT_OF_SCOPE
+            and result.error_detail.startswith(UNREQUESTED_DETAIL_PREFIX))
+
+
+def is_withheld_by_us(result: FetchResult) -> bool:
+    """Not sent because of our own side: the per-host ceiling, or a re-score's gap."""
+    return is_ceiling_refusal(result) or is_unrequested(result)
+
+
 def is_metadata_url(url: str) -> bool:
     """Only well-known metadata documents are shared between endpoints, so only they are
     worth keeping for reuse."""
@@ -352,7 +369,7 @@ class Fetcher:
                 and not result.reused and is_metadata_url(url)):
             documents.setdefault(url, result)
             return result
-        if is_ceiling_refusal(result) and url in documents:
+        if is_withheld_by_us(result) and url in documents:
             return replace(documents[url], reused=True, fetched_at=result.fetched_at)
         return result
 

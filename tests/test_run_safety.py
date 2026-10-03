@@ -790,7 +790,7 @@ def test_a_bulk_host_is_sampled_rather_than_attempted_and_lost():
     """The finding that stopped the census on 30 July 2026, before it started.
 
     `RatePolicy.max_requests_per_host` caps one host at 30 requests per pass. An endpoint
-    costs two to six of those, and the corpus puts 1,281 endpoints on `gateway.pipeworx.io`
+    costs two to six of those, and the corpus puts 1,281 endpoints on one hostname
     with 2,015 across the eleven hostnames over thirty each. So the ceiling would have been
     spent after a handful, the remaining ~1,270 would have returned `OUT_OF_SCOPE` with
     `reachable=False`, the kill switch would have read a fifth of the corpus as unreachable,

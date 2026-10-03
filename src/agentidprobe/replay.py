@@ -19,7 +19,7 @@ from datetime import datetime
 
 from .config import DEFAULT_CONFIG, MeasurementConfig
 from .fetcher import (
-    CEILING_DETAIL_PREFIX,
+    UNREQUESTED_DETAIL_PREFIX,
     ErrorKind,
     Fetcher,
     FetchResult,
@@ -55,9 +55,18 @@ class ReplayFetcher:
         # the correct outcome: a silent divergence would falsify R8's whole claim.
         self.config = config
         self._by_key: dict[tuple[str, str], list[dict]] = {}
+        self._by_endpoint: dict[str, list[dict]] = {}
         for record in artifacts:
             key = (record.get("endpoint_id", ""), record.get("url", ""))
             self._by_key.setdefault(key, []).append(record)
+            self._by_endpoint.setdefault(record.get("endpoint_id", ""), []).append(record)
+        # Runs recorded before artefact schema 2 (3 October 2026) carry no record of the
+        # reuse rule, so the replay applies it for them. A schema-2 run records every reuse
+        # as it happened, and its refusals are the live outcome: re-deciding them would let a
+        # replay answer a refusal the live run could not, for instance across a resume, which
+        # is the non-determinism R8 forbids.
+        self.legacy = all(int(r.get("artifact_schema", 1)) < 2 for r in artifacts) \
+            if artifacts else False
         self._cursor: dict[tuple[str, str], int] = {}
         # The run's first successful response to each metadata URL, whichever endpoint it was
         # fetched for. A live `Fetcher` answers a ceiling refusal from the documents it had
@@ -94,8 +103,28 @@ class ReplayFetcher:
         self.strict = strict
         self.misses: list[str] = []
 
-    def bind(self, endpoint_id: str) -> None:
+    def bind(self, endpoint_id: str, endpoint_url: str | None = None) -> None:
+        """Replay one endpoint, aligned to the last time the live run probed it.
+
+        A resumed run can hold two attempts at one endpoint, and the stored report comes from
+        the last. Replaying the first attempt's responses re-scored a different probe, which
+        is how one census2 endpoint could not be re-scored at all until 3 October 2026 and,
+        for a few hours that day, was re-scored as not observed while its report said pass.
+        """
         self._endpoint_id = endpoint_id
+        if endpoint_url is None:
+            return
+        records = self._by_endpoint.get(endpoint_id, [])
+        starts = [_when(r) for r in records if r.get("url") == endpoint_url]
+        if len(starts) < 2:
+            return
+        last = max(starts)
+        for record in records:
+            key = (endpoint_id, record.get("url", ""))
+            queue = [r for r in self._by_key.get(key, []) if _when(r) >= last]
+            self._by_key[key] = queue
+            self._cursor[key] = 0
+        self._endpoint_started[endpoint_id] = last
 
     async def __aenter__(self) -> ReplayFetcher:
         return self
@@ -112,13 +141,12 @@ class ReplayFetcher:
     async def fetch(self, url: str) -> FetchResult:
         key = (self._endpoint_id, url)
         queue = self._by_key.get(key)
-        if (not queue and self.unrequested_metadata_not_observed and is_metadata_url(url)
-                and self._endpoint_id in self._endpoint_started):
+        if (not queue and self.unrequested_metadata_not_observed and self.legacy
+                and is_metadata_url(url) and self._endpoint_id in self._endpoint_started):
             started = self._endpoint_started[self._endpoint_id]
             refusal = FetchResult(
                 url=url, ok=False, error_kind=ErrorKind.OUT_OF_SCOPE,
-                error_detail=f"{CEILING_DETAIL_PREFIX} every request the stored run sent "
-                             f"it for this endpoint; this one was never sent (replay)",
+                error_detail=f"{UNREQUESTED_DETAIL_PREFIX} (replay of a schema-1 run)",
                 fetched_at=started)
             first = self._first_success.get(url)
             earlier = ({url: _to_fetch_result(first)}
@@ -142,7 +170,7 @@ class ReplayFetcher:
         index = min(self._cursor.get(key, 0), len(queue) - 1)
         self._cursor[key] = index + 1
         result = _to_fetch_result(queue[index])
-        if is_ceiling_refusal(result):
+        if self.legacy and is_ceiling_refusal(result):
             first = self._first_success.get(url)
             earlier = ({url: _to_fetch_result(first)}
                        if first is not None and _when(first) < _when(queue[index])

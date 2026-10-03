@@ -7,10 +7,11 @@ them. `rescore --verify` had only ever been pointed at the synthetic `example` r
 four reports of our own construction and cannot fail. The claim was true of the thing that had
 been tested and untested of the thing it named.
 
-It is very nearly true. census1 reproduces every one of its verdicts. census2 reproduces all
-but one endpoint, where the live run stopped at the path-suffixed metadata candidate and the
-replay walks one candidate further to the root form, which was therefore never stored. That is
-one endpoint of 8,896, and the honest sentence says so rather than rounding it to "identical".
+Until 3 October 2026 it was very nearly true: census2 reproduced all but one endpoint, where
+the live run stopped at the path-suffixed metadata candidate and the replay walked one candidate
+further to a root-form document that was never stored. Since the ceiling rule of that date, a
+metadata request the stored run never made is treated as one the ceiling refused, answered from
+the run's own earlier copy or not observed, so every report replays and the gap is gone.
 
 Output: docs/replay-verification.json, committed, and read by the manuscript's build so the
 number in the paper cannot drift from the number the command produces. Same pattern as

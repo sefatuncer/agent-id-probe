@@ -166,7 +166,8 @@ def test_the_weight_is_over_the_endpoints_actually_asked() -> None:
 
 
 def test_a_host_the_sampling_rule_never_touched_is_still_weighted_if_the_ceiling_bit() -> None:
-    """The ceiling left endpoints unasked on 25 hosts the sampling rule never capped."""
+    """The ceiling left endpoints unasked on hosts the sampling rule never capped (ten in
+    census2)."""
     reports = (_corpus({"small.test": (90, 10), "busy.test": (0, 5)})
                + _not_applicable("busy.test", 5, refused=True))
     table = per_host_sampling(reports, {})

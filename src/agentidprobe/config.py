@@ -124,7 +124,7 @@ class Scope:
     #
     # The request ceiling above is a promise about load; this is the sampling rule that
     # keeps the ceiling from turning into silent data loss. The corpus is 7,681 hostnames,
-    # but `gateway.pipeworx.io` carries 1,281 endpoints and 2,015 sit on the eleven
+    # but one hostname carries 1,281 endpoints and 2,015 sit on the eleven
     # hostnames holding more than thirty each. At 2-6 requests per endpoint the ceiling is
     # spent after a handful of them, so without this rule roughly a fifth of the corpus
     # would have come back `OUT_OF_SCOPE`, counted as unreachable, and aborted the run.

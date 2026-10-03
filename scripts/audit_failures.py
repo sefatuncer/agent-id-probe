@@ -10,9 +10,10 @@ it answers a different question.
 So the rules are re-implemented here, from the specification sentences rather than from
 `checks_oauth.py`, and run against the stored evidence. Where the two implementations
 disagree, one of them is wrong, and the disagreement is printed with everything needed to
-decide which. That is the audit the paper promises; the census produced 1,506 failures and no
-one is reading 1,506 verdicts, so it is taken over a seeded random sample and the sampling is
-part of the reported method rather than a footnote to it.
+decide which. That is the audit the paper promises. It was first taken over a seeded random
+sample, since no one reads some fifteen hundred verdicts by hand, and since 3 October 2026 it
+runs over every failure (`--all`), which a machine does in seconds; the sample remains for
+comparison with the earlier record.
 
 The independence is partial, and the limit is stated rather than implied. This is a second
 implementation by the instrument's own author, and both implementations read the same stored
@@ -381,13 +382,15 @@ def audit(run_id: str, sample_size: int, root: Path | None = None) -> dict:
 
 
 _URL = re.compile(r"""https?://[^\s'",;)]+""")
+# A bare host name, which a reason can carry without a scheme.
+_HOST = re.compile(r"(?:[a-z0-9-]+\.)+[a-z]{2,}", re.IGNORECASE)
 
 
 def redact(result: dict) -> dict:
     """The audit record without any endpoint or issuer URL, for publication."""
     def clean(entry: dict) -> dict:
         return {"check": entry["check"], "instrument": entry["instrument"],
-                "reason": _URL.sub("<url>", entry.get("reason", ""))}
+                "reason": _HOST.sub("<host>", _URL.sub("<url>", entry.get("reason", "")))}
     return {**result, "redacted": True,
             "findings": [clean(e) for e in result["findings"]],
             "undecidable_cases": [clean(e) for e in result["undecidable_cases"]]}

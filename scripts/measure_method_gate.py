@@ -111,7 +111,9 @@ async def main() -> int:
                 "publish_prm": len(found),
                 "rate": round(len(found) / asked, 4) if asked else None,
                 "declaring_at_least_one_issuer": sum(1 for f in found if f["declares_issuers"]),
-                "hits": found,
+                # Counts only since 3 October 2026: the per-endpoint hits named deployments, and
+                # the ethics record limits publication to aggregates.
+                "hits_count": len(found),
             }
             print(f"{name:>16}: {len(found)}/{asked} publish protected-resource metadata")
 
