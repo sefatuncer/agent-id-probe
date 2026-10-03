@@ -28,6 +28,11 @@ from agentidprobe.store import RunStore  # noqa: E402
 MUST_STAGES = ("C05", "C12", "C13")
 
 
+def _c05():
+    from agentidprobe.models import CheckId
+    return CheckId.PRM_PRESENT
+
+
 def _failures(reports: dict) -> Counter:
     return Counter(check.check_id.value for report in reports.values()
                    for check in report.checks if check.outcome.value.startswith("fail"))
@@ -67,6 +72,24 @@ def diff(before_id: str, after_id: str, root: Path = ROOT) -> dict:
             if a != b:
                 transitions[f"{check}: {a} -> {b}"] += 1
     fb, fa = _failures(before), _failures(after)
+    # Removed and added separately, since the reuse rule also produces failures a reader
+    # would otherwise not see behind a net figure (review of 3 October 2026, D1).
+    removed: Counter = Counter()
+    added: Counter = Counter()
+    for transition, n in transitions.items():
+        check, move = transition.split(": ", 1)
+        old_outcome, new_outcome = move.split(" -> ")
+        if old_outcome.startswith("fail") and not new_outcome.startswith("fail"):
+            removed[check] += n
+        elif new_outcome.startswith("fail") and not old_outcome.startswith("fail"):
+            added[check] += n
+    # 403s that the old challenge rule admitted to C05's primary denominator (D2).
+    bare_403 = sum(
+        1 for key, report in before.items()
+        if report.http_status == 403 and not (report.evidence or {}).get("www_authenticate")
+        and report.robots_allowed and not report.opted_out and not report.crossed_origin()
+        and (o := report.outcome_of(_c05())) is not None
+        and o.value not in ("not_applicable", "error", "unspecified"))
     return {
         "schema": "agent-id-probe/rescore-diff/1",
         "before": before_id,
@@ -81,6 +104,9 @@ def diff(before_id: str, after_id: str, root: Path = ROOT) -> dict:
         "failing_units_before": _failing_units(before),
         "failing_units_after": _failing_units(after),
         "transitions": dict(sorted(transitions.items())),
+        "failures_removed": dict(sorted(removed.items())) | {"total": sum(removed.values())},
+        "failures_added": dict(sorted(added.items())) | {"total": sum(added.values())},
+        "bare_403_in_challenged_denominator_before": bare_403,
         "manifest_after": _rescore_manifest(RunStore(root, after_id)),
     }
 
