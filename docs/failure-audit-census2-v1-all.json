@@ -45,5 +45,6 @@
     }
   ],
   "undecidable_cases": [],
-  "redacted": true
+  "redacted": true,
+  "auditor_version": 1
 }

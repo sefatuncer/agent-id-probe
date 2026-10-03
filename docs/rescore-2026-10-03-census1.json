@@ -43,8 +43,20 @@
     "C13: fail_unimplemented -> pass": 75,
     "C13: not_applicable -> error": 10,
     "C13: not_applicable -> pass": 2,
-    "C13: pass -> error": 1
+    "C13: pass -> error": 4
   },
+  "failures_removed": {
+    "C05": 17,
+    "C12": 1,
+    "C13": 75,
+    "total": 93
+  },
+  "failures_added": {
+    "C05": 4,
+    "C12": 4,
+    "total": 8
+  },
+  "bare_403_in_challenged_denominator_before": 19,
   "manifest_after": {
     "ceiling_refusals_answered_from_run": 95,
     "probe_tree_dirty": false,
@@ -62,14 +74,14 @@
     "rescored_from": "census1",
     "run_context": {
       "dns_resolver": null,
-      "probe_git_commit": "6847c74e7796e52eacd5269ac78a7da6a045adf8",
+      "probe_git_commit": "5328d03a7cd20f8a59e92a88b5d19aee7a362cd4",
       "run_id": "census1-z",
-      "started_at": "2026-10-03T13:04:23.463939Z",
+      "started_at": "2026-10-03T14:37:36.250631Z",
       "vantage_point": "offline-replay"
     },
     "stage": "rescore",
     "unrequested_metadata_answered_from_run": 2,
     "unrequested_metadata_not_observed": 2,
-    "written_at": "2026-10-03T13:04:23.498884+00:00"
+    "written_at": "2026-10-03T14:37:36.295557+00:00"
   }
 }

@@ -32,7 +32,7 @@
     "C05: not_applicable -> error": 11,
     "C05: not_applicable -> fail_misimplemented": 4,
     "C05: not_applicable -> pass": 3,
-    "C05: pass -> error": 2,
+    "C05: pass -> error": 1,
     "C12: absent -> error": 3,
     "C12: absent -> fail_misimplemented": 1,
     "C12: absent -> not_applicable": 14,
@@ -40,15 +40,26 @@
     "C12: not_applicable -> error": 11,
     "C12: not_applicable -> fail_misimplemented": 5,
     "C12: not_applicable -> pass": 2,
-    "C12: pass -> error": 1,
     "C13: absent -> error": 3,
     "C13: absent -> not_applicable": 14,
     "C13: absent -> pass": 1,
     "C13: fail_unimplemented -> pass": 71,
     "C13: not_applicable -> error": 11,
     "C13: not_applicable -> pass": 3,
-    "C13: pass -> error": 2
+    "C13: pass -> error": 3
   },
+  "failures_removed": {
+    "C05": 18,
+    "C12": 1,
+    "C13": 71,
+    "total": 90
+  },
+  "failures_added": {
+    "C05": 4,
+    "C12": 6,
+    "total": 10
+  },
+  "bare_403_in_challenged_denominator_before": 20,
   "manifest_after": {
     "ceiling_refusals_answered_from_run": 96,
     "probe_tree_dirty": false,
@@ -66,14 +77,14 @@
     "rescored_from": "census2",
     "run_context": {
       "dns_resolver": null,
-      "probe_git_commit": "6847c74e7796e52eacd5269ac78a7da6a045adf8",
+      "probe_git_commit": "5328d03a7cd20f8a59e92a88b5d19aee7a362cd4",
       "run_id": "census2-z",
-      "started_at": "2026-10-03T13:07:25.293825Z",
+      "started_at": "2026-10-03T14:40:54.287414Z",
       "vantage_point": "offline-replay"
     },
     "stage": "rescore",
     "unrequested_metadata_answered_from_run": 4,
-    "unrequested_metadata_not_observed": 1,
-    "written_at": "2026-10-03T13:07:25.319603+00:00"
+    "unrequested_metadata_not_observed": 0,
+    "written_at": "2026-10-03T14:40:54.327059+00:00"
   }
 }
