@@ -19,6 +19,7 @@ than one that needs a scientific stack.
 
 from __future__ import annotations
 
+import json
 import math
 import random
 from dataclasses import dataclass, field
@@ -1170,6 +1171,188 @@ def manski_bounds(p_hat: float, unobserved: int, observed: int) -> tuple[float, 
     return (low, min(1.0, low + b))
 
 
+# Fetch outcomes that are our own decision. An issuer we never asked for one of these reasons
+# is withheld by our policy (Table 10, row 2); one never asked because its host blocked us, did
+# not resolve or timed out is unobserved for a reason that is not ours (row 1).
+_OUR_DECISIONS = frozenset({"robots_disallowed", "opted_out", "out_of_scope"})
+_NOT_OUR_DECISIONS = frozenset({"blocked", "timeout", "dns", "tls", "connection",
+                                "too_large", "other"})
+
+
+def unasked_issuer_reasons(artifact_lines, issuers) -> dict[str, str]:
+    """Why each named-but-never-requested issuer was not asked: "ours", "not ours" or unknown.
+
+    The reports record only that an issuer's metadata was "not observed (R4)", which joins our
+    robots policy and the operator's access block under one message. Table 10 has to separate
+    them, because row 1 is defined as missing for reasons that are not ours. The fetch log
+    knows: every request the run made, refused or not, is an artefact with its `error_kind`.
+    An issuer's host is classified by what the run met there, and our own refusal wins when
+    both occur, since it is what stopped the metadata request.
+
+    `artifact_lines` is any iterable of artefact records (dicts) or of their JSON lines.
+    """
+    from urllib.parse import urlsplit
+
+    wanted: dict[str, list[str]] = {}
+    for issuer in issuers:
+        host = urlsplit(issuer).hostname
+        if host:
+            wanted.setdefault(host, []).append(issuer)
+    kinds: dict[str, set[str]] = {host: set() for host in wanted}
+    for line in artifact_lines:
+        if isinstance(line, str):
+            if not line.strip():
+                continue
+            record = json.loads(line)
+        else:
+            record = line
+        host = urlsplit(record.get("url") or "").hostname
+        if host in kinds:
+            kinds[host].add(str(record.get("error_kind") or "none"))
+    reasons: dict[str, str] = {}
+    for host, members in wanted.items():
+        seen = kinds[host]
+        if seen & _OUR_DECISIONS:
+            reason = "ours"
+        elif seen & _NOT_OUR_DECISIONS:
+            reason = "not ours"
+        else:
+            reason = "unknown"
+        for issuer in members:
+            reasons[issuer] = reason
+    for issuer in issuers:
+        reasons.setdefault(issuer, "unknown")
+    return reasons
+
+
+def issuer_manski_rows(p_hat: float, n: int, unseen_endpoints: dict[str, int],
+                       known_unrated: dict[str, int], issuers_per_endpoint: float) -> dict:
+    """Table 10's rows at the issuer unit the bounded rates are measured at.
+
+    Until 1 November 2026 the unobserved share b was computed over endpoints and then applied
+    to an issuer-level rate, and the text said so rather than fixing it. The two units do not
+    map one to one. Here b is a share of issuers: the issuers the
+    rate's denominator could not rate are counted where they are known, and the issuers that
+    endpoints we never saw would have named are bounded under two stated assumptions:
+
+    - **at the observed rate**: an unseen endpoint names new issuers at the rate the seen
+      endpoints did (distinct named issuers per seen endpoint);
+    - **one per endpoint**: every unseen endpoint names one issuer nobody else named, which is
+      above anything the run observed (no declaring endpoint named more than two issuers, and
+      almost all named one).
+
+    Both are bounds in Manski's sense on the outcome and stated assumptions on the count. Row
+    names follow Table 10: "operator", "policy" and "frame".
+    """
+    rows = {}
+    for name in ("operator", "policy", "frame"):
+        endpoints = unseen_endpoints[name]
+        known = known_unrated[name]
+        row = {"unseen_endpoints": endpoints, "known_unrated_issuers": known}
+        for assumption, unseen_issuers in (
+                ("observed_rate", round(issuers_per_endpoint * endpoints) + known),
+                ("one_per_endpoint", endpoints + known)):
+            lo, hi = manski_bounds(p_hat, unseen_issuers, n)
+            total = n + unseen_issuers
+            row[assumption] = {"unobserved": unseen_issuers,
+                               "b": unseen_issuers / total if total else 0.0,
+                               "lo": lo, "hi": hi}
+        rows[name] = row
+    return rows
+
+
+def issuer_unobserved(reports: list, sampling: dict | None = None,
+                      artifact_lines=None) -> dict:
+    """Who is missing from the issuer-level rates, counted at the issuer unit.
+
+    The endpoint-unit shares are kept, since Section 9.2 reports them, but they are no longer
+    what bounds an issuer-level rate. `artifact_lines` (the run's fetch log) separates issuers
+    we declined to ask from issuers whose host refused us; without it every never-asked issuer
+    is placed with our own policy and the record says so.
+    """
+    from .models import Modality
+
+    oauth_reports = [r for r in reports if r.modality is Modality.OAUTH_METADATA]
+    unreachable = unreachable_composition(oauth_reports)
+    seen_ids: set[str] = set()
+    endpoints = robots_excluded = crossed = 0
+    for report in oauth_reports:
+        if report.endpoint.endpoint_id in seen_ids:
+            continue
+        seen_ids.add(report.endpoint.endpoint_id)
+        endpoints += 1
+        if not report.robots_allowed or report.opted_out:
+            robots_excluded += 1
+        elif report.crossed_origin():
+            crossed += 1
+    not_sampled = int((sampling or {}).get("not_sampled_total") or 0)
+    operator = unreachable["operator_caused"]
+    withheld_by_us = unreachable["scope_gated"] + robots_excluded + crossed
+    frame_total = endpoints + not_sampled
+    endpoint_shares = {
+        "operator": operator / endpoints if endpoints else 0.0,
+        "policy": (operator + withheld_by_us) / endpoints if endpoints else 0.0,
+        "frame": ((operator + withheld_by_us + not_sampled) / frame_total)
+        if frame_total else 0.0,
+    }
+    unseen_endpoints = {"operator": operator,
+                        "policy": operator + withheld_by_us,
+                        "frame": operator + withheld_by_us + not_sampled}
+
+    declared = set(issuer_documents(reports, "declared"))
+    observed = set(issuer_documents(reports, "observed"))
+    named: set[str] = set()
+    withheld: set[str] = set()
+    per_declarer: dict[int, int] = {}
+    for report in oauth_reports:
+        evidence = report.evidence or {}
+        servers = {i for i in evidence.get("authorization_servers") or [] if isinstance(i, str)}
+        if servers:
+            per_declarer[len(servers)] = per_declarer.get(len(servers), 0) + 1
+        named |= servers
+        withheld.update(evidence.get("as_not_fetched") or {})
+    unasked = sorted(named - declared - observed - withheld)
+    if artifact_lines is not None:
+        reasons = unasked_issuer_reasons(artifact_lines, unasked)
+        classified = True
+    else:
+        reasons = {issuer: "unknown" for issuer in unasked}
+        classified = False
+    unasked_not_ours = sum(1 for i in unasked if reasons[i] == "not ours")
+    unasked_ours = len(unasked) - unasked_not_ours
+    withheld_named = len(withheld & named)
+    asked_no_metadata = len(declared - observed)
+
+    # Known unrated issuers, by the denominator the rate uses (R11.5). The declared
+    # denominator already holds the issuers asked without an answer; the observed one does not.
+    known = {
+        "declared": {"operator": unasked_not_ours,
+                     "policy": unasked_not_ours + unasked_ours + withheld_named},
+        "observed": {"operator": asked_no_metadata + unasked_not_ours,
+                     "policy": asked_no_metadata + unasked_not_ours + unasked_ours
+                     + withheld_named},
+    }
+    for record in known.values():
+        record["frame"] = record["policy"]
+
+    seen_endpoints = endpoints - operator - withheld_by_us
+    return {
+        "endpoint_shares": endpoint_shares,
+        "unseen_endpoints": unseen_endpoints,
+        "seen_endpoints": seen_endpoints,
+        "issuers_named": len(named),
+        "issuers_per_seen_endpoint": len(named) / seen_endpoints if seen_endpoints else 0.0,
+        "issuers_per_declaring_endpoint": {str(k): v for k, v in sorted(per_declarer.items())},
+        "unasked_issuers": len(unasked),
+        "unasked_not_ours": unasked_not_ours,
+        "unasked_ours": unasked_ours,
+        "unasked_classified_from_fetch_log": classified,
+        "withheld_issuers": withheld_named,
+        "asked_without_metadata": asked_no_metadata,
+        "known_unrated": known,
+    }
+
+
 def _zero_bound_by_domain(documents: dict, predicate) -> dict:
     """k, the domains the documents fall on, the exact one-sided 95% bound when k is zero,
     and how much of the population the two largest domains hold."""
@@ -2162,7 +2345,8 @@ def headline_candidates(reports: list, conf: float = 0.95) -> list[tuple[str, Pr
     return [(label, by_rank[rank]) for rank, label, _ in HEADLINE_CANDIDATES]
 
 
-def analyse(reports: list, conf: float = 0.95, sampling: dict | None = None) -> dict:
+def analyse(reports: list, conf: float = 0.95, sampling: dict | None = None,
+            artifact_lines=None) -> dict:
     """Everything R11 and R12 require, as one record written before the paper is touched.
 
     The point is not convenience. R11.2 selects the headline, and a selection that happens
@@ -2185,6 +2369,10 @@ def analyse(reports: list, conf: float = 0.95, sampling: dict | None = None) -> 
     `sampling` is the run's `sampling.json` when there is one. It carries the per-host cap
     and what the cap withheld, which is what the cap's cost is estimated from; without it
     that one section is omitted rather than guessed.
+
+    `artifact_lines` is the run's fetch log (`artifacts.jsonl`), streamed. It is read for one
+    thing only: why each named issuer that was never requested was not requested, which
+    decides whether Table 10 counts it in row 1 or row 2 (see `issuer_unobserved`).
     """
     from .models import CheckId, Modality
 
@@ -2200,38 +2388,21 @@ def analyse(reports: list, conf: float = 0.95, sampling: dict | None = None) -> 
     # both plus the frame the per-host rule never sampled. R4 forbids publishing our policy
     # as a property of the ecosystem, which is why the first row exists; honesty about what
     # the policy costs is why the other two do.
-    seen: set[str] = set()
-    endpoints = 0
-    robots_excluded = crossed = 0
-    for report in oauth_reports:
-        if report.endpoint.endpoint_id in seen:
-            continue
-        seen.add(report.endpoint.endpoint_id)
-        endpoints += 1
-        if not report.robots_allowed or report.opted_out:
-            robots_excluded += 1
-        elif report.crossed_origin():
-            crossed += 1
-    not_sampled = int((sampling or {}).get("not_sampled_total") or 0)
-    frame_total = endpoints + not_sampled
-    withheld_by_us = unreachable["scope_gated"] + robots_excluded + crossed
-    shares = {
-        "operator": (unreachable["operator_caused"] / endpoints) if endpoints else 0.0,
-        "policy": ((unreachable["operator_caused"] + withheld_by_us) / endpoints)
-        if endpoints else 0.0,
-        "frame": ((unreachable["operator_caused"] + withheld_by_us + not_sampled)
-                  / frame_total) if frame_total else 0.0,
-    }
+    # Since 1 November 2026 b is counted at the issuer unit the two bounded rates use; see
+    # `issuer_manski_rows`. The endpoint shares are still recorded because Section 9.2 prints
+    # them, but they no longer enter a bound.
+    unobserved_issuers = issuer_unobserved(reports, sampling, artifact_lines)
     manski: dict[str, dict] = {}
-    for rank, label, _denominator in HEADLINE_CANDIDATES:
+    for rank, label, denominator in HEADLINE_CANDIDATES:
         if rank not in (1, 2):
             continue
         estimate = candidates[[r for r, _, _ in HEADLINE_CANDIDATES].index(rank)][1]
-        rows = {}
-        for name, share in shares.items():
-            unobserved = round(estimate.n * share / (1 - share)) if share < 1 else 0
-            lo, hi = manski_bounds(estimate.p_hat, unobserved, estimate.n)
-            rows[name] = {"share": share, "unobserved": unobserved, "lo": lo, "hi": hi}
+        rows = issuer_manski_rows(
+            estimate.p_hat, estimate.n, unobserved_issuers["unseen_endpoints"],
+            unobserved_issuers["known_unrated"][denominator],
+            unobserved_issuers["issuers_per_seen_endpoint"])
+        for name, row in rows.items():
+            row["endpoint_share"] = unobserved_issuers["endpoint_shares"][name]
         manski[label.split(" --")[0]] = rows
 
     return {
@@ -2308,6 +2479,7 @@ def analyse(reports: list, conf: float = 0.95, sampling: dict | None = None) -> 
         "exposure": exposure_analysis(reports, conf),
         "unreachable": unreachable,
         "manski": manski,
+        "unobserved_issuers": unobserved_issuers,
         "identifier_sensitivity": identifier_comparison_sensitivity(reports),
         "served_under_sensitivity": served_under_sensitivity(reports, conf),
         "sampling_bias": ({

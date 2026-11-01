@@ -232,7 +232,14 @@ def _cmd_analyse(args: argparse.Namespace) -> int:
     sampling = json.loads(sampling_path.read_text(encoding="utf-8")) \
         if sampling_path.exists() else None
 
-    result = analyse(reports, conf=args.conf, sampling=sampling)
+    # The fetch log separates issuers we declined to ask from issuers whose host refused us,
+    # which Table 10's first two rows need apart. It is streamed, not loaded.
+    artifacts = store.artifacts_path
+    if artifacts.exists():
+        with artifacts.open(encoding="utf-8") as lines:
+            result = analyse(reports, conf=args.conf, sampling=sampling, artifact_lines=lines)
+    else:
+        result = analyse(reports, conf=args.conf, sampling=sampling)
     destination = store.run_dir / "analysis.json"
     destination.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n",
                            encoding="utf-8")
