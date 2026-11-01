@@ -1,0 +1,627 @@
+{
+  "schema": "agent-id-probe/coverage-calibrated/1",
+  "run_id": "census2",
+  "seed": 20261101,
+  "trials": 10000,
+  "wcb_reps": 9999,
+  "nominal_coverage": 0.95,
+  "icc_grid": [
+    0.0,
+    0.05,
+    0.2,
+    0.5,
+    0.9
+  ],
+  "coverage_at_estimated_icc": [
+    0.3187,
+    0.9522
+  ],
+  "coverage_over_icc_grid": [
+    0.555,
+    0.9524
+  ],
+  "below_090_at_estimated_icc": [
+    "c05-implementation",
+    "c05-wider-endpoint",
+    "c05-wider-implementation",
+    "c12-apex",
+    "c13-apex",
+    "c13-endpoint",
+    "c16",
+    "c16-crossing",
+    "c17",
+    "c18"
+  ],
+  "model": "beta-binomial: one propensity per dependence group, Beta with the observed rate as mean and the ANOVA ICC (or a grid value); members draw independently given it; the coverage target is the model mean",
+  "intervals": [
+    {
+      "key": "c05-endpoint",
+      "unit": "endpoint",
+      "published_clustering": "apex",
+      "dependence_grouping": "apex",
+      "k": 1241,
+      "n": 1578,
+      "m": 1168,
+      "m_dependence": 1168,
+      "dependence_singleton_share": 0.9126712328767124,
+      "dependence_largest": 83,
+      "p_hat": 0.7864385297845374,
+      "published": [
+        0.716852813517921,
+        0.8560242460511539
+      ],
+      "method": "cluster-robust t(1167)",
+      "icc": 0.7938573934774475,
+      "wild_cluster_bootstrap": [
+        0.7216033302252944,
+        0.8514293966464445
+      ],
+      "coverage": 0.9029,
+      "coverage_by_icc": {
+        "0": 0.9493,
+        "0.05": 0.9445,
+        "0.2": 0.9366,
+        "0.5": 0.9237,
+        "0.9": 0.8975
+      }
+    },
+    {
+      "key": "c05-apex",
+      "unit": "apex",
+      "published_clustering": "none (one observation per cluster)",
+      "dependence_grouping": "implementation",
+      "k": 956,
+      "n": 1168,
+      "m": 1168,
+      "m_dependence": 856,
+      "dependence_singleton_share": 0.8738317757009346,
+      "dependence_largest": 31,
+      "p_hat": 0.8184931506849316,
+      "published": [
+        0.7963562225593441,
+        0.840630078810519
+      ],
+      "method": "cluster-robust t(1167)",
+      "icc": 0.9892487593061723,
+      "dependence_clustered": [
+        0.7900162084365889,
+        0.8469700929332742
+      ],
+      "wild_cluster_bootstrap": [
+        0.7962074468693177,
+        0.841262180039845
+      ],
+      "coverage": null,
+      "coverage_note": "not simulated: the implementation fingerprint is built from the documents C05 asks for, so grouping C05's apexes by it sorts them by their own outcome"
+    },
+    {
+      "key": "c05-implementation",
+      "unit": "implementation",
+      "published_clustering": "none (one observation per cluster)",
+      "dependence_grouping": "apex",
+      "k": 657,
+      "n": 991,
+      "m": 991,
+      "m_dependence": 855,
+      "dependence_singleton_share": 0.960233918128655,
+      "dependence_largest": 62,
+      "p_hat": 0.6629667003027245,
+      "published": [
+        0.6334855764430812,
+        0.6924478241623678
+      ],
+      "method": "cluster-robust t(990)",
+      "icc": 0.6943377237435995,
+      "dependence_clustered": [
+        0.574988301222731,
+        0.750945099382718
+      ],
+      "wild_cluster_bootstrap": [
+        0.633545701408601,
+        0.6929592499413164
+      ],
+      "coverage": 0.6327,
+      "coverage_dependence_clustered": 0.9511,
+      "coverage_by_icc": {
+        "0": 0.949,
+        "0.05": 0.9242,
+        "0.2": 0.8441,
+        "0.5": 0.7071,
+        "0.9": 0.555
+      },
+      "coverage_dependence_clustered_by_icc": {
+        "0": 0.9521,
+        "0.05": 0.9466,
+        "0.2": 0.9474,
+        "0.5": 0.9523,
+        "0.9": 0.9547
+      }
+    },
+    {
+      "key": "c12-endpoint",
+      "unit": "endpoint",
+      "published_clustering": "apex",
+      "dependence_grouping": "apex",
+      "k": 1774,
+      "n": 2610,
+      "m": 1865,
+      "m_dependence": 1865,
+      "dependence_singleton_share": 0.9045576407506702,
+      "dependence_largest": 83,
+      "p_hat": 0.6796934865900384,
+      "published": [
+        0.6258247753310002,
+        0.7335621978490765
+      ],
+      "method": "cluster-robust t(1864)",
+      "icc": 0.6847791741057782,
+      "wild_cluster_bootstrap": [
+        0.6232937920037237,
+        0.7359238513630533
+      ],
+      "coverage": 0.9227,
+      "coverage_by_icc": {
+        "0": 0.9505,
+        "0.05": 0.9407,
+        "0.2": 0.9424,
+        "0.5": 0.934,
+        "0.9": 0.9229
+      }
+    },
+    {
+      "key": "c12-apex",
+      "unit": "apex",
+      "published_clustering": "none (one observation per cluster)",
+      "dependence_grouping": "implementation",
+      "k": 1322,
+      "n": 1865,
+      "m": 1865,
+      "m_dependence": 1187,
+      "dependence_singleton_share": 0.8264532434709352,
+      "dependence_largest": 47,
+      "p_hat": 0.7088471849865952,
+      "published": [
+        0.6882103051545881,
+        0.7294840648186022
+      ],
+      "method": "cluster-robust t(1864)",
+      "icc": 0.11093995195134226,
+      "dependence_clustered": [
+        0.685296049640827,
+        0.7323983203323633
+      ],
+      "wild_cluster_bootstrap": [
+        0.6882194660594909,
+        0.7293520509423237
+      ],
+      "coverage": 0.8891,
+      "coverage_dependence_clustered": 0.9476,
+      "coverage_by_icc": {
+        "0": 0.9513,
+        "0.05": 0.9266,
+        "0.2": 0.8443,
+        "0.5": 0.7127,
+        "0.9": 0.6122
+      },
+      "coverage_dependence_clustered_by_icc": {
+        "0": 0.9534,
+        "0.05": 0.953,
+        "0.2": 0.9457,
+        "0.5": 0.9427,
+        "0.9": 0.9386
+      }
+    },
+    {
+      "key": "c12-implementation",
+      "unit": "implementation",
+      "published_clustering": "none (one observation per cluster)",
+      "dependence_grouping": "apex",
+      "k": 858,
+      "n": 1222,
+      "m": 1222,
+      "m_dependence": 1183,
+      "dependence_singleton_share": 0.9856297548605241,
+      "dependence_largest": 10,
+      "p_hat": 0.7021276595744681,
+      "published": [
+        0.6764506698858618,
+        0.7278046492630744
+      ],
+      "method": "cluster-robust t(1221)",
+      "icc": 0.025259268543981618,
+      "dependence_clustered": [
+        0.6752486068302979,
+        0.7290067123186383
+      ],
+      "wild_cluster_bootstrap": [
+        0.6762129768157636,
+        0.7278324078456676
+      ],
+      "coverage": 0.9522,
+      "coverage_dependence_clustered": 0.9526,
+      "coverage_by_icc": {
+        "0": 0.9509,
+        "0.05": 0.9492,
+        "0.2": 0.9467,
+        "0.5": 0.94,
+        "0.9": 0.9319
+      },
+      "coverage_dependence_clustered_by_icc": {
+        "0": 0.951,
+        "0.05": 0.9497,
+        "0.2": 0.951,
+        "0.5": 0.9488,
+        "0.9": 0.9484
+      }
+    },
+    {
+      "key": "c13-endpoint",
+      "unit": "endpoint",
+      "published_clustering": "apex",
+      "dependence_grouping": "apex",
+      "k": 2316,
+      "n": 2381,
+      "m": 1739,
+      "m_dependence": 1739,
+      "dependence_singleton_share": 0.9068430132259919,
+      "dependence_largest": 83,
+      "p_hat": 0.9727005459890802,
+      "published": [
+        0.9637615250943115,
+        0.9816395668838489
+      ],
+      "method": "cluster-robust t(1738)",
+      "icc": 0.7945959208378125,
+      "wild_cluster_bootstrap": [
+        0.9637575542386513,
+        0.9814908809287493
+      ],
+      "coverage": 0.834,
+      "coverage_by_icc": {
+        "0": 0.9483,
+        "0.05": 0.9376,
+        "0.2": 0.9097,
+        "0.5": 0.8628,
+        "0.9": 0.8173
+      }
+    },
+    {
+      "key": "c13-apex",
+      "unit": "apex",
+      "published_clustering": "none (one observation per cluster)",
+      "dependence_grouping": "implementation",
+      "k": 1688,
+      "n": 1739,
+      "m": 1739,
+      "m_dependence": 1091,
+      "dependence_singleton_share": 0.8212648945921174,
+      "dependence_largest": 48,
+      "p_hat": 0.9706728004600345,
+      "published": [
+        0.9627350492665074,
+        0.9786105516535615
+      ],
+      "method": "cluster-robust t(1738)",
+      "icc": 0.486112613715515,
+      "dependence_clustered": [
+        0.9621320806959973,
+        0.9792135202240716
+      ],
+      "wild_cluster_bootstrap": [
+        0.9626959652922665,
+        0.9785414789577059
+      ],
+      "coverage": 0.737,
+      "coverage_dependence_clustered": 0.8897,
+      "coverage_by_icc": {
+        "0": 0.948,
+        "0.05": 0.9233,
+        "0.2": 0.8496,
+        "0.5": 0.7305,
+        "0.9": 0.6358
+      },
+      "coverage_dependence_clustered_by_icc": {
+        "0": 0.9495,
+        "0.05": 0.9414,
+        "0.2": 0.9271,
+        "0.5": 0.8907,
+        "0.9": 0.8525
+      }
+    },
+    {
+      "key": "c13-implementation",
+      "unit": "implementation",
+      "published_clustering": "none (one observation per cluster)",
+      "dependence_grouping": "apex",
+      "k": 1071,
+      "n": 1112,
+      "m": 1112,
+      "m_dependence": 1089,
+      "dependence_singleton_share": 0.9871441689623508,
+      "dependence_largest": 5,
+      "p_hat": 0.9631294964028777,
+      "published": [
+        0.9520365650954207,
+        0.9742224277103347
+      ],
+      "method": "cluster-robust t(1111)",
+      "icc": 0.0,
+      "dependence_clustered": [
+        0.9518154670134742,
+        0.9744435257922812
+      ],
+      "wild_cluster_bootstrap": [
+        0.9520245284808544,
+        0.9741092816611755
+      ],
+      "coverage": 0.9435,
+      "coverage_dependence_clustered": 0.9435,
+      "coverage_by_icc": {
+        "0": 0.9403,
+        "0.05": 0.9397,
+        "0.2": 0.9432,
+        "0.5": 0.9359,
+        "0.9": 0.935
+      },
+      "coverage_dependence_clustered_by_icc": {
+        "0": 0.9405,
+        "0.05": 0.9399,
+        "0.2": 0.9435,
+        "0.5": 0.9374,
+        "0.9": 0.9394
+      }
+    },
+    {
+      "key": "c16",
+      "unit": "issuer",
+      "published_clustering": "issuer apex",
+      "dependence_grouping": "issuer apex",
+      "k": 126,
+      "n": 1994,
+      "m": 1656,
+      "m_dependence": 1656,
+      "dependence_singleton_share": 0.9758454106280193,
+      "dependence_largest": 83,
+      "p_hat": 0.06318956870611836,
+      "published": [
+        0.04978448579966058,
+        0.07659465161257614
+      ],
+      "method": "cluster-robust t(1655)",
+      "icc": 0.9751136061056533,
+      "wild_cluster_bootstrap": [
+        0.0494156566660245,
+        0.07704346598904914
+      ],
+      "coverage": 0.8145,
+      "coverage_by_icc": {
+        "0": 0.9524,
+        "0.05": 0.9415,
+        "0.2": 0.9287,
+        "0.5": 0.8805,
+        "0.9": 0.8279
+      }
+    },
+    {
+      "key": "c18",
+      "unit": "issuer",
+      "published_clustering": "issuer apex",
+      "dependence_grouping": "issuer apex",
+      "k": 12,
+      "n": 1979,
+      "m": 1643,
+      "m_dependence": 1643,
+      "dependence_singleton_share": 0.9756542909312234,
+      "dependence_largest": 83,
+      "p_hat": 0.00606366851945427,
+      "published": [
+        0.002563330723673892,
+        0.009564006315234647
+      ],
+      "method": "cluster-robust t(1642)",
+      "icc": 0.999,
+      "wild_cluster_bootstrap": [
+        0.0025388263866417678,
+        0.009609425750082038
+      ],
+      "coverage": 0.3187,
+      "coverage_by_icc": {
+        "0": 0.9476,
+        "0.05": 0.9294,
+        "0.2": 0.9113,
+        "0.5": 0.8875,
+        "0.9": 0.8705
+      }
+    },
+    {
+      "key": "c16-crossing",
+      "unit": "issuer",
+      "published_clustering": "issuer apex",
+      "dependence_grouping": "issuer apex",
+      "k": 8,
+      "n": 187,
+      "m": 74,
+      "m_dependence": 74,
+      "dependence_singleton_share": 0.8783783783783784,
+      "dependence_largest": 58,
+      "p_hat": 0.0427807486631016,
+      "published": [
+        0.01569226547560152,
+        0.11134081524566194
+      ],
+      "method": "cluster-robust t(73); boundary-respecting Wilson at the effective sample size",
+      "icc": 0.907693951430439,
+      "wild_cluster_bootstrap": [
+        0.0,
+        0.11085735563426596
+      ],
+      "coverage": 0.7723,
+      "coverage_by_icc": {
+        "0": 0.9446,
+        "0.05": 0.9078,
+        "0.2": 0.8751,
+        "0.5": 0.8252,
+        "0.9": 0.7748
+      }
+    },
+    {
+      "key": "c18-crossing",
+      "unit": "issuer",
+      "published_clustering": "issuer apex",
+      "dependence_grouping": "issuer apex",
+      "k": 0,
+      "n": 187,
+      "m": 74,
+      "m_dependence": 74,
+      "dependence_singleton_share": 0.8783783783783784,
+      "dependence_largest": 58,
+      "p_hat": 0.0,
+      "published": [
+        0.0,
+        0.015892321633036777
+      ],
+      "method": "cluster-robust t(73); one-sided bound at the effective sample size",
+      "icc": 0.0,
+      "wild_cluster_bootstrap": [
+        0.0,
+        0.020129105883143858
+      ],
+      "coverage": null,
+      "coverage_note": "not simulated: the count is on the boundary, the interval is a one-sided bound, and there is no interior rate to simulate at"
+    },
+    {
+      "key": "c05-wider-endpoint",
+      "unit": "endpoint",
+      "published_clustering": "apex",
+      "dependence_grouping": "apex",
+      "k": 2459,
+      "n": 2965,
+      "m": 2087,
+      "m_dependence": 2087,
+      "dependence_singleton_share": 0.900335409678965,
+      "dependence_largest": 83,
+      "p_hat": 0.8293423271500843,
+      "published": [
+        0.7841585465241581,
+        0.8745261077760105
+      ],
+      "method": "cluster-robust t(2086)",
+      "icc": 0.781075324629639,
+      "wild_cluster_bootstrap": [
+        0.7845513255573782,
+        0.8744303476155914
+      ],
+      "coverage": 0.8949,
+      "coverage_by_icc": {
+        "0": 0.9503,
+        "0.05": 0.9422,
+        "0.2": 0.9371,
+        "0.5": 0.9097,
+        "0.9": 0.8839
+      }
+    },
+    {
+      "key": "c05-wider-apex",
+      "unit": "apex",
+      "published_clustering": "none (one observation per cluster)",
+      "dependence_grouping": "implementation",
+      "k": 1793,
+      "n": 2087,
+      "m": 2087,
+      "m_dependence": 1398,
+      "dependence_singleton_share": 0.8512160228898427,
+      "dependence_largest": 48,
+      "p_hat": 0.859127934834691,
+      "published": [
+        0.8441902131944139,
+        0.874065656474968
+      ],
+      "method": "cluster-robust t(2086)",
+      "icc": 0.9492694412655867,
+      "dependence_clustered": [
+        0.838014760209029,
+        0.8802411094603529
+      ],
+      "wild_cluster_bootstrap": [
+        0.8439563812422168,
+        0.8738114102655712
+      ],
+      "coverage": null,
+      "coverage_note": "not simulated: the implementation fingerprint is built from the documents C05 asks for, so grouping C05's apexes by it sorts them by their own outcome"
+    },
+    {
+      "key": "c05-wider-implementation",
+      "unit": "implementation",
+      "published_clustering": "none (one observation per cluster)",
+      "dependence_grouping": "apex",
+      "k": 1147,
+      "n": 1556,
+      "m": 1556,
+      "m_dependence": 1393,
+      "dependence_singleton_share": 0.9691313711414213,
+      "dependence_largest": 62,
+      "p_hat": 0.737146529562982,
+      "published": [
+        0.7152510312629327,
+        0.7590420278630313
+      ],
+      "method": "cluster-robust t(1555)",
+      "icc": 0.5316410933726841,
+      "dependence_clustered": [
+        0.6733261126656132,
+        0.8009669464603508
+      ],
+      "wild_cluster_bootstrap": [
+        0.7152280305474918,
+        0.7593378258720735
+      ],
+      "coverage": 0.7819,
+      "coverage_dependence_clustered": 0.9475,
+      "coverage_by_icc": {
+        "0": 0.9479,
+        "0.05": 0.9341,
+        "0.2": 0.8788,
+        "0.5": 0.7875,
+        "0.9": 0.6846
+      },
+      "coverage_dependence_clustered_by_icc": {
+        "0": 0.9504,
+        "0.05": 0.9476,
+        "0.2": 0.9465,
+        "0.5": 0.9485,
+        "0.9": 0.9453
+      }
+    },
+    {
+      "key": "c17",
+      "unit": "issuer",
+      "published_clustering": "issuer apex",
+      "dependence_grouping": "issuer apex",
+      "k": 1900,
+      "n": 1994,
+      "m": 1656,
+      "m_dependence": 1656,
+      "dependence_singleton_share": 0.9758454106280193,
+      "dependence_largest": 83,
+      "p_hat": 0.9528585757271816,
+      "published": [
+        0.9417812136103458,
+        0.9639359378440173
+      ],
+      "method": "cluster-robust t(1655)",
+      "icc": 0.5405532385170986,
+      "wild_cluster_bootstrap": [
+        0.9413424439593315,
+        0.9640522802578775
+      ],
+      "coverage": 0.8707,
+      "coverage_by_icc": {
+        "0": 0.9502,
+        "0.05": 0.9428,
+        "0.2": 0.9208,
+        "0.5": 0.88,
+        "0.9": 0.8265
+      }
+    }
+  ]
+}

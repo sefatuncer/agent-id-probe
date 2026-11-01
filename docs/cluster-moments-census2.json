@@ -1,0 +1,314 @@
+{
+  "schema": "agent-id-probe/cluster-moments/1",
+  "run_id": "census2",
+  "conf": 0.95,
+  "reconstruct_with": "agentidprobe.analysis.proportion_from_moments",
+  "intervals": [
+    {
+      "key": "c05-endpoint",
+      "unit": "endpoint",
+      "clustering": "apex",
+      "moments": {
+        "m": 1168,
+        "n": 1578,
+        "k": 1241,
+        "sum_n2": 14706,
+        "sum_kn": 10173,
+        "sum_k2": 10035
+      },
+      "p_hat": 0.7864385297845374,
+      "interval": [
+        0.7168528135179218,
+        0.856024246051153
+      ]
+    },
+    {
+      "key": "c05-apex",
+      "unit": "apex",
+      "clustering": "none (one observation per cluster)",
+      "moments": {
+        "m": 1168,
+        "n": 1168,
+        "k": 956,
+        "sum_n2": 1168,
+        "sum_kn": 956,
+        "sum_k2": 956
+      },
+      "p_hat": 0.8184931506849316,
+      "interval": [
+        0.796356222559344,
+        0.8406300788105191
+      ]
+    },
+    {
+      "key": "c05-implementation",
+      "unit": "implementation",
+      "clustering": "none (one observation per cluster)",
+      "moments": {
+        "m": 991,
+        "n": 991,
+        "k": 657,
+        "sum_n2": 991,
+        "sum_kn": 657,
+        "sum_k2": 657
+      },
+      "p_hat": 0.6629667003027245,
+      "interval": [
+        0.6334855764430813,
+        0.6924478241623677
+      ]
+    },
+    {
+      "key": "c12-endpoint",
+      "unit": "endpoint",
+      "clustering": "apex",
+      "moments": {
+        "m": 1865,
+        "n": 2610,
+        "k": 1774,
+        "sum_n2": 26478,
+        "sum_kn": 18192,
+        "sum_k2": 17634
+      },
+      "p_hat": 0.6796934865900384,
+      "interval": [
+        0.6258247753310001,
+        0.7335621978490766
+      ]
+    },
+    {
+      "key": "c12-apex",
+      "unit": "apex",
+      "clustering": "none (one observation per cluster)",
+      "moments": {
+        "m": 1865,
+        "n": 1865,
+        "k": 1322,
+        "sum_n2": 1865,
+        "sum_kn": 1322,
+        "sum_k2": 1322
+      },
+      "p_hat": 0.7088471849865952,
+      "interval": [
+        0.6882103051545885,
+        0.7294840648186018
+      ]
+    },
+    {
+      "key": "c12-implementation",
+      "unit": "implementation",
+      "clustering": "none (one observation per cluster)",
+      "moments": {
+        "m": 1222,
+        "n": 1222,
+        "k": 858,
+        "sum_n2": 1222,
+        "sum_kn": 858,
+        "sum_k2": 858
+      },
+      "p_hat": 0.7021276595744681,
+      "interval": [
+        0.6764506698858619,
+        0.7278046492630743
+      ]
+    },
+    {
+      "key": "c13-endpoint",
+      "unit": "endpoint",
+      "clustering": "apex",
+      "moments": {
+        "m": 1739,
+        "n": 2381,
+        "k": 2316,
+        "sum_n2": 24457,
+        "sum_kn": 24319,
+        "sum_k2": 24288
+      },
+      "p_hat": 0.9727005459890802,
+      "interval": [
+        0.9637615250943115,
+        0.9816395668838489
+      ]
+    },
+    {
+      "key": "c13-apex",
+      "unit": "apex",
+      "clustering": "none (one observation per cluster)",
+      "moments": {
+        "m": 1739,
+        "n": 1739,
+        "k": 1688,
+        "sum_n2": 1739,
+        "sum_kn": 1688,
+        "sum_k2": 1688
+      },
+      "p_hat": 0.9706728004600345,
+      "interval": [
+        0.9627350492665074,
+        0.9786105516535615
+      ]
+    },
+    {
+      "key": "c13-implementation",
+      "unit": "implementation",
+      "clustering": "none (one observation per cluster)",
+      "moments": {
+        "m": 1112,
+        "n": 1112,
+        "k": 1071,
+        "sum_n2": 1112,
+        "sum_kn": 1071,
+        "sum_k2": 1071
+      },
+      "p_hat": 0.9631294964028777,
+      "interval": [
+        0.9520365650954208,
+        0.9742224277103346
+      ]
+    },
+    {
+      "key": "c16",
+      "unit": "issuer",
+      "clustering": "issuer apex",
+      "moments": {
+        "m": 1656,
+        "n": 1994,
+        "k": 126,
+        "sum_n2": 16760,
+        "sum_kn": 137,
+        "sum_k2": 136
+      },
+      "p_hat": 0.06318956870611836,
+      "interval": [
+        0.0497844857996606,
+        0.07659465161257611
+      ]
+    },
+    {
+      "key": "c18",
+      "unit": "issuer",
+      "clustering": "issuer apex",
+      "moments": {
+        "m": 1643,
+        "n": 1979,
+        "k": 12,
+        "sum_n2": 16619,
+        "sum_kn": 12,
+        "sum_k2": 12
+      },
+      "p_hat": 0.00606366851945427,
+      "interval": [
+        0.0025633307236738708,
+        0.009564006315234668
+      ]
+    },
+    {
+      "key": "c16-crossing",
+      "unit": "issuer",
+      "clustering": "issuer apex",
+      "moments": {
+        "m": 74,
+        "n": 187,
+        "k": 8,
+        "sum_n2": 5595,
+        "sum_kn": 9,
+        "sum_k2": 8
+      },
+      "p_hat": 0.0427807486631016,
+      "interval": [
+        0.015692265475601527,
+        0.11134081524566199
+      ]
+    },
+    {
+      "key": "c18-crossing",
+      "unit": "issuer",
+      "clustering": "issuer apex",
+      "moments": {
+        "m": 74,
+        "n": 187,
+        "k": 0,
+        "sum_n2": 5595,
+        "sum_kn": 0,
+        "sum_k2": 0
+      },
+      "p_hat": 0.0,
+      "interval": [
+        0.0,
+        0.015892321633036777
+      ]
+    },
+    {
+      "key": "c05-wider-endpoint",
+      "unit": "endpoint",
+      "clustering": "apex",
+      "moments": {
+        "m": 2087,
+        "n": 2965,
+        "k": 2459,
+        "sum_n2": 31639,
+        "sum_kn": 25173,
+        "sum_k2": 24657
+      },
+      "p_hat": 0.8293423271500843,
+      "interval": [
+        0.7841585465241582,
+        0.8745261077760104
+      ]
+    },
+    {
+      "key": "c05-wider-apex",
+      "unit": "apex",
+      "clustering": "none (one observation per cluster)",
+      "moments": {
+        "m": 2087,
+        "n": 2087,
+        "k": 1793,
+        "sum_n2": 2087,
+        "sum_kn": 1793,
+        "sum_k2": 1793
+      },
+      "p_hat": 0.859127934834691,
+      "interval": [
+        0.8441902131944141,
+        0.8740656564749678
+      ]
+    },
+    {
+      "key": "c05-wider-implementation",
+      "unit": "implementation",
+      "clustering": "none (one observation per cluster)",
+      "moments": {
+        "m": 1556,
+        "n": 1556,
+        "k": 1147,
+        "sum_n2": 1556,
+        "sum_kn": 1147,
+        "sum_k2": 1147
+      },
+      "p_hat": 0.737146529562982,
+      "interval": [
+        0.7152510312629328,
+        0.7590420278630312
+      ]
+    },
+    {
+      "key": "c17",
+      "unit": "issuer",
+      "clustering": "issuer apex",
+      "moments": {
+        "m": 1656,
+        "n": 1994,
+        "k": 1900,
+        "sum_n2": 16760,
+        "sum_kn": 16288,
+        "sum_k2": 15950
+      },
+      "p_hat": 0.9528585757271816,
+      "interval": [
+        0.941781213610346,
+        0.9639359378440172
+      ]
+    }
+  ]
+}

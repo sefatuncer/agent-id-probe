@@ -390,6 +390,57 @@ def cluster_robust_proportion(
     )
 
 
+def cluster_moments(clusters: list[tuple[int, int]]) -> dict:
+    """The sufficient statistics of `cluster_robust_proportion`'s interval, and nothing else.
+
+    m, N and K are the counts; sum(n_i^2), sum(k_i * n_i) and sum(k_i^2) give the
+    between-cluster sum of squares, sum((k_i - p n_i)^2) = Skk - 2 p Skn + p^2 Snn, and Kish's
+    size. Together they let a reader recompute every published interval exactly
+    (`proportion_from_moments`) without the per-cluster vector, whose largest entries can be
+    matched to hosts in the public registry (YK1, 1 November 2026).
+    """
+    return {
+        "m": len(clusters),
+        "n": sum(n for _, n in clusters),
+        "k": sum(k for k, _ in clusters),
+        "sum_n2": sum(n * n for _, n in clusters),
+        "sum_kn": sum(k * n for k, n in clusters),
+        "sum_k2": sum(k * k for k, _ in clusters),
+    }
+
+
+def proportion_from_moments(moments: dict, conf: float = 0.95) -> tuple[float, float, float]:
+    """(p_hat, lo, hi) as `cluster_robust_proportion` publishes them, from `cluster_moments`.
+
+    Follows the same rules in the same order: the simple-random-sample variance floor, Wilson
+    at the effective sample size where the symmetric interval clamps, and the one-sided bound
+    on a count at the boundary. Kept beside the estimator, and tested against it, so that the
+    published moments are known to be sufficient rather than assumed to be.
+    """
+    m, total, successes = moments["m"], moments["n"], moments["k"]
+    if total == 0:
+        return 0.0, 0.0, 0.0
+    p_hat = successes / total
+    if m < 2:
+        lo, hi = wilson_interval(successes, total, conf)
+        return p_hat, lo, hi
+    ssq = max(moments["sum_k2"] - 2 * p_hat * moments["sum_kn"]
+              + p_hat * p_hat * moments["sum_n2"], 0.0)
+    var = m / ((m - 1) * total**2) * ssq
+    simple_var = p_hat * (1 - p_hat) / total
+    se = math.sqrt(max(var, simple_var))
+    t = student_t_ppf(1.0 - (1.0 - conf) / 2.0, m - 1)
+    lo, hi = max(0.0, p_hat - t * se), min(1.0, p_hat + t * se)
+    deff = var / simple_var if simple_var > 0 else None
+    if (lo == 0.0 or hi == 1.0) and 0 < successes < total and deff and deff > 0:
+        lo, hi = wilson_interval(successes / max(deff, 1.0), total / max(deff, 1.0), conf)
+    elif successes in (0, total):
+        divisor = max(deff, 1.0) if deff and deff > 0 else 1.0
+        bound = one_sided_bound(total / divisor, conf)
+        lo, hi = (0.0, bound) if successes == 0 else (1.0 - bound, 1.0)
+    return p_hat, lo, hi
+
+
 def wild_cluster_bootstrap_ci(
     clusters: list[tuple[int, int]],
     conf: float = 0.95,
@@ -428,7 +479,14 @@ def wild_cluster_bootstrap_ci(
     lo_q = stats[max(0, int(alpha * reps) - 1)]
     hi_q = stats[min(reps - 1, int((1.0 - alpha) * reps))]
     base = cluster_robust_proportion(clusters, conf)
-    se_hat = (base.hi - base.p_hat) / student_t_ppf(1.0 - alpha, m - 1) if m > 1 else 0.0
+    # The standard error is computed, not read back off the published interval. Until
+    # 1 November 2026 it was (hi - p) / t, which is the standard error only where the
+    # interval is symmetric: where the boundary rule had substituted Wilson at the effective
+    # sample size, the bootstrap was scaled by a number that was not a standard error. The
+    # variance is floored at simple random sampling, as the published interval's is.
+    ssq_hat = sum(r * r for r in residuals)
+    var_hat = max(m / ((m - 1) * total**2) * ssq_hat, p_hat * (1 - p_hat) / total)
+    se_hat = math.sqrt(var_hat)
     lo, hi = max(0.0, p_hat - hi_q * se_hat), min(1.0, p_hat - lo_q * se_hat)
     if hi - lo <= 0.0:
         # Degenerate: every bootstrap replicate landed on the point estimate, which happens
@@ -535,27 +593,108 @@ def rate_by_unit(reports: list, check_id, unit: str, conf: float = 0.95,
     endpoints, 46.2%, had not challenged. Both populations are now reported, this one as
     the primary and the wider one as a declared sensitivity arm.
     """
+    return cluster_robust_proportion(
+        unit_clusters(reports, check_id, unit, challenged_only=challenged_only), conf)
+
+
+def unit_clusters(reports: list, check_id, unit: str, challenged_only: bool = False,
+                  cluster_by: str | None = None) -> list[tuple[int, int]]:
+    """The (passes, total) pairs `rate_by_unit` estimates from, one per cluster.
+
+    Split out on 1 November 2026 so that the coverage calibration simulates from exactly the
+    clusters a published interval was computed over, rather than from a second copy of the
+    denominator rules. `cluster_by` overrides the grouping: the default clusters endpoints by
+    apex and makes each collapsed unit its own cluster, and "implementation" on the apex unit
+    groups apexes that share a fingerprint, the dependence Section 4.5 says no published
+    interval corrects.
+    """
     from .models import Outcome
 
-    applicable = [
+    applicable = _rated(reports, check_id, challenged_only)
+    if unit == "endpoint":
+        population, default_key = applicable, "apex"
+    else:
+        population, default_key = _collapse_to_one_per(applicable, unit), "endpoint"
+
+    buckets: dict[str, list[int]] = {}
+    for report in population:
+        bucket = buckets.setdefault(_cluster_key(report, cluster_by or default_key), [0, 0])
+        bucket[1] += 1
+        if report.outcome_of(check_id) is Outcome.PASS:
+            bucket[0] += 1
+    return [(k, n) for k, n in buckets.values()]
+
+
+def _rated(reports: list, check_id, challenged_only: bool = False) -> list:
+    """The reports a rate for `check_id` is computed over: the denominator rules of
+    `rate_by_unit`, in one place so that every caller applies the same ones."""
+    from .models import Outcome
+
+    return [
         r for r in reports
         if r.robots_allowed and not r.opted_out and not r.crossed_origin()
         and (not challenged_only or challenged(r))
         and (o := r.outcome_of(check_id)) is not None
         and o not in (Outcome.NOT_APPLICABLE, Outcome.ERROR, Outcome.UNSPECIFIED)
     ]
-    if unit == "endpoint":
-        population, cluster_by = applicable, "apex"
-    else:
-        population, cluster_by = _collapse_to_one_per(applicable, unit), "endpoint"
 
-    buckets: dict[str, list[int]] = {}
-    for report in population:
-        bucket = buckets.setdefault(_cluster_key(report, cluster_by), [0, 0])
-        bucket[1] += 1
-        if report.outcome_of(check_id) is Outcome.PASS:
-            bucket[0] += 1
-    return cluster_robust_proportion([(k, n) for k, n in buckets.values()], conf)
+
+#: Seeds for the random-representative arm of `apex_representative_sensitivity`. Fixed on
+#: 1 November 2026, with the function and before its first run.
+REPRESENTATIVE_SEEDS = (1, 2, 3, 4, 5)
+
+
+def apex_representative_sensitivity(reports: list, check_id, challenged_only: bool = False,
+                                    conf: float = 0.95) -> dict:
+    """How much the apex-unit rate depends on which endpoint represents each apex.
+
+    The published apex rate takes the endpoint with the lowest identifier, and the identifier
+    is a hash of the URL as the registry lists it (`collectors.endpoint_id`), so the choice is
+    fixed before any contact and independent of the outcome. Independent of the outcome is not
+    the same as immaterial: an apex whose endpoints disagree is scored by whichever one the
+    hash puts first. Three alternatives measure how much that matters, each over the
+    same rated endpoints the published rate uses:
+
+    * `any_pass` -- the apex passes if any of its rated endpoints passes, an upper envelope;
+    * `all_pass` -- it passes only if every one does, the lower envelope;
+    * `random` -- a representative drawn at random per apex, under each of five fixed seeds.
+
+    Every representative rule lies between the two envelopes, so they bound what any choice
+    of representative could print. `mixed_apexes` counts the apexes whose endpoints disagree,
+    the only ones the choice can move.
+    """
+    from .models import Outcome
+
+    by_apex: dict[str, list] = {}
+    for report in _rated(reports, check_id, challenged_only):
+        by_apex.setdefault(_cluster_key(report, "apex"), []).append(report)
+
+    def passes(report) -> bool:
+        return report.outcome_of(check_id) is Outcome.PASS
+
+    def rate(flags: list[bool]) -> dict:
+        record = cluster_robust_proportion([(int(f), 1) for f in flags], conf).as_record()
+        return {key: record[key] for key in ("k", "n", "p_hat", "ci_lo", "ci_hi")}
+
+    apexes = sorted(by_apex)
+    published = [passes(min(by_apex[a], key=lambda r: r.endpoint.endpoint_id)) for a in apexes]
+    random_arms = []
+    for seed in REPRESENTATIVE_SEEDS:
+        rng = random.Random(seed)
+        random_arms.append(rate([
+            passes(rng.choice(sorted(by_apex[a], key=lambda r: r.endpoint.endpoint_id)))
+            for a in apexes]))
+    random_rates = [arm["p_hat"] for arm in random_arms]
+    return {
+        "apexes": len(apexes),
+        "mixed_apexes": sum(1 for a in apexes
+                            if len({passes(r) for r in by_apex[a]}) > 1),
+        "published": rate(published),
+        "any_pass": rate([any(passes(r) for r in by_apex[a]) for a in apexes]),
+        "all_pass": rate([all(passes(r) for r in by_apex[a]) for a in apexes]),
+        "random": random_arms,
+        "random_range": [min(random_rates), max(random_rates)],
+    }
 
 
 def denominator_composition(reports: list, check_id) -> dict:
@@ -1492,15 +1631,7 @@ def exposure_analysis(reports: list, conf: float = 0.95) -> dict:
 
     def _rate(predicate, docs: dict) -> dict:
         # Clustered on the issuer's own registrable domain, as every issuer-level rate is.
-        buckets: dict[str, list[int]] = {}
-        for issuer, document in docs.items():
-            key = _apex(issuer) or issuer
-            bucket = buckets.setdefault(key, [0, 0])
-            bucket[1] += 1
-            if predicate(document):
-                bucket[0] += 1
-        clusters = [(k, n) for k, n in buckets.values()]
-        return cluster_robust_proportion(clusters, conf=conf).as_record()
+        return cluster_robust_proportion(issuer_clusters(docs, predicate), conf=conf).as_record()
 
     # -- concentration at three issuer units, and over crossing edges only ---------------
     def _concentration(edges: list, key) -> dict:
@@ -1875,7 +2006,17 @@ def issuer_rate(
     times. The apex is the collectable proxy for the product; where it is unresolvable the
     issuer forms its own cluster, which is the conservative direction.
     """
-    documents = issuer_documents(reports, denominator)
+    return cluster_robust_proportion(
+        issuer_clusters(issuer_documents(reports, denominator), predicate), conf)
+
+
+def issuer_clusters(documents: dict, predicate) -> list[tuple[int, int]]:
+    """(passes, total) per issuer registrable domain, as every issuer-level rate clusters.
+
+    An issuer whose apex cannot be resolved forms its own cluster. Shared by `issuer_rate`,
+    the crossing-issuer rates and the coverage calibration (1 November 2026), which used to
+    carry their own copies of these lines.
+    """
     buckets: dict[str, list[int]] = {}
     for issuer, doc in documents.items():
         key = _apex(issuer) or f"?{issuer}"
@@ -1883,7 +2024,7 @@ def issuer_rate(
         bucket[1] += 1
         if predicate(doc):
             bucket[0] += 1
-    return cluster_robust_proportion([(k, n) for k, n in buckets.values()], conf)
+    return [(k, n) for k, n in buckets.values()]
 
 
 def _advertises_iss(doc: dict | None) -> bool:
@@ -2466,6 +2607,14 @@ def analyse(reports: list, conf: float = 0.95, sampling: dict | None = None,
         },
         "denominator_composition": {
             check.value: denominator_composition(reports, check)
+            for check in (CheckId.PRM_PRESENT, CheckId.PRM_RESOURCE_IDENTITY_MATCH,
+                          CheckId.AS_CORRESPONDENCE)
+        },
+        # Which endpoint represents an apex, varied: C05 over its primary (challenged)
+        # population, as the published apex rate is.
+        "apex_representative": {
+            check.value: apex_representative_sensitivity(
+                reports, check, challenged_only=check is CheckId.PRM_PRESENT, conf=conf)
             for check in (CheckId.PRM_PRESENT, CheckId.PRM_RESOURCE_IDENTITY_MATCH,
                           CheckId.AS_CORRESPONDENCE)
         },
