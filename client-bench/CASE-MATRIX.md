@@ -181,3 +181,11 @@ RFC 9728 §7.6 cross-check, though nothing obliges it to.
 
 **Not observed: the token's audience.** Whether a token is accepted is decided by the server
 this bench configures, so observing it would measure our own configuration.
+
+**Correction during the run, 2 November 2026.** The first TypeScript run served a document
+naming the root issuer, which is also where a client lands when it discards the document and
+falls back to the 2025-03-26 behaviour of treating the resource's origin as its authorization
+server. A5 therefore read "use" for both TypeScript lines although neither used the document:
+the authorization request carried no `resource` at all. The document now names a path issuer
+(`/as-first`) that only the document points to, so "use" means reaching that issuer and a
+fallback is recorded as such. The required column is unchanged, and no cell had been reported.

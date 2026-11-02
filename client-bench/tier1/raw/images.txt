@@ -1,0 +1,6 @@
+node:24.21.0-trixie node@sha256:be40f6a87b9b22215ddb20da0a2320a5c6d583fe3ee3b0024d9fa4f05b40c8fd
+python:3.13-trixie python@sha256:82c46c08c991d3d3ff10476ac5e386c2c28f27bbd3985a02c5e39fe99ab272eb
+mcr.microsoft.com/dotnet/sdk:10.0.401-resolute mcr.microsoft.com/dotnet/sdk@sha256:d818bb3014d94172e93820d985130135870bd1760f02588a61263a85c966860e
+golang:1.27.1-trixie golang@sha256:433790e515d27dc6003e847e644cc0af956985cf315c1c58a3b73ee2dd305183
+rust:1.98.1-trixie rust@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
+ruby:3.4.11-trixie ruby@sha256:da59b74df06952ff6e99b792ac7713010b8039c5989f0accaf6c97448b31d0ff

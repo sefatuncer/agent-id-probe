@@ -1,5 +1,10 @@
 # Client bench — results
 
+> **Superseded on 2 November 2026 by `tier1/RESULTS.md`**, which drives the complete
+> authorization flow of every Tier-1 SDK and decides each cell from the server's request log.
+> This file is kept as the record of the 10 August run. Its disclosure note below was settled
+> on 1 October 2026: no maintainer is notified (`docs/ETHICS.md` §9).
+
 **Run 10 August 2026.** Cases fixed in `CASE-MATRIX.md` before the bench ran. Raw records in
 `results.jsonl`, one per (implementation, case).
 

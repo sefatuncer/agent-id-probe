@@ -43,3 +43,19 @@ htmlcov/
 # Client bench dependencies. The lockfile is committed and pins the versions every result
 # record carries, so the tree is reproducible without shipping 95 packages.
 client-bench/node_modules/
+
+# Tier-1 client bench (client-bench/tier1): dependency caches and build outputs, written into
+# each SDK's directory by its container. Versions are pinned by the committed manifests and
+# lockfiles (package-lock.json, go.sum, Cargo.lock, bench.csproj) and by run.sh.
+client-bench/tier1/ts/node_modules/
+client-bench/tier1/python/site/
+client-bench/tier1/go/.gopath/
+client-bench/tier1/go/.gocache/
+client-bench/tier1/go/bench
+client-bench/tier1/ruby/gems/
+client-bench/tier1/csharp/.nuget/
+client-bench/tier1/csharp/obj/
+client-bench/tier1/csharp/bin/
+client-bench/tier1/csharp/out/
+client-bench/tier1/rust/.cargo/
+client-bench/tier1/rust/target/

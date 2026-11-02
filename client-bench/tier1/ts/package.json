@@ -1,0 +1,11 @@
+{
+  "name": "tier1-bench-ts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Drives the TypeScript MCP SDK client authorization flows against the loopback bench server.",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@modelcontextprotocol/client": "2.4.0"
+  }
+}

@@ -1,0 +1,84 @@
+Session termination failed: 202
+Session termination failed: 202
+OAuth flow error
+Traceback (most recent call last):
+  File "/w/site/mcp/client/auth/oauth2.py", line 661, in _auth_flow
+    await self._validate_resource_match(prm)
+  File "/w/site/mcp/client/auth/oauth2.py", line 592, in _validate_resource_match
+    raise OAuthFlowError(f"Protected resource {prm_resource} does not match expected {default_resource}")
+mcp.client.auth.exceptions.OAuthFlowError: Protected resource http://127.0.0.1:8765/tenant-b/mcp does not match expected http://127.0.0.1:8765/tenant-a/mcp
+OAuth flow error
+Traceback (most recent call last):
+  File "/w/site/mcp/client/auth/oauth2.py", line 661, in _auth_flow
+    await self._validate_resource_match(prm)
+  File "/w/site/mcp/client/auth/oauth2.py", line 592, in _validate_resource_match
+    raise OAuthFlowError(f"Protected resource {prm_resource} does not match expected {default_resource}")
+mcp.client.auth.exceptions.OAuthFlowError: Protected resource http://attacker.example/mcp does not match expected http://127.0.0.1:8765/tenant-a/mcp
+Session termination failed: 202
+Session termination failed: 202
+OAuth flow error
+Traceback (most recent call last):
+  File "/w/site/mcp/client/auth/oauth2.py", line 661, in _auth_flow
+    await self._validate_resource_match(prm)
+  File "/w/site/mcp/client/auth/oauth2.py", line 592, in _validate_resource_match
+    raise OAuthFlowError(f"Protected resource {prm_resource} does not match expected {default_resource}")
+mcp.client.auth.exceptions.OAuthFlowError: Protected resource http://127.0.0.1:8765/TENANT-A/mcp does not match expected http://127.0.0.1:8765/tenant-a/mcp
+Session termination failed: 202
+OAuth flow error
+Traceback (most recent call last):
+  File "/w/site/mcp/client/auth/oauth2.py", line 716, in _auth_flow
+    validate_metadata_issuer(asm, expected_issuer)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/w/site/mcp/client/auth/utils.py", line 273, in validate_metadata_issuer
+    raise OAuthFlowError(
+        f"Authorization server metadata issuer mismatch: {oauth_metadata.issuer} != {expected_issuer}"
+    )
+mcp.client.auth.exceptions.OAuthFlowError: Authorization server metadata issuer mismatch: http://attacker.example != http://127.0.0.1:8765/as-first
+Session termination failed: 202
+Session termination failed: 202
+Session termination failed: 202
+Session termination failed: 202
+OAuth flow error
+Traceback (most recent call last):
+  File "/w/site/mcp/client/auth/oauth2.py", line 785, in _auth_flow
+    token_response = yield await self._perform_authorization()
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/w/site/mcp/client/auth/oauth2.py", line 381, in _perform_authorization
+    auth_code, code_verifier = await self._perform_authorization_code_grant()
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/w/site/mcp/client/auth/oauth2.py", line 437, in _perform_authorization_code_grant
+    validate_authorization_response_iss(result.iss, self.context.oauth_metadata)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/w/site/mcp/client/auth/utils.py", line 256, in validate_authorization_response_iss
+    raise OAuthFlowError(f"Authorization response iss mismatch: {iss} != {expected}")
+mcp.client.auth.exceptions.OAuthFlowError: Authorization response iss mismatch: http://attacker.example != http://127.0.0.1:8765/as-first
+OAuth flow error
+Traceback (most recent call last):
+  File "/w/site/mcp/client/auth/oauth2.py", line 785, in _auth_flow
+    token_response = yield await self._perform_authorization()
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/w/site/mcp/client/auth/oauth2.py", line 381, in _perform_authorization
+    auth_code, code_verifier = await self._perform_authorization_code_grant()
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/w/site/mcp/client/auth/oauth2.py", line 437, in _perform_authorization_code_grant
+    validate_authorization_response_iss(result.iss, self.context.oauth_metadata)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/w/site/mcp/client/auth/utils.py", line 260, in validate_authorization_response_iss
+    raise OAuthFlowError("Authorization response missing iss parameter advertised by the authorization server")
+mcp.client.auth.exceptions.OAuthFlowError: Authorization response missing iss parameter advertised by the authorization server
+Session termination failed: 202
+OAuth flow error
+Traceback (most recent call last):
+  File "/w/site/mcp/client/auth/oauth2.py", line 785, in _auth_flow
+    token_response = yield await self._perform_authorization()
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/w/site/mcp/client/auth/oauth2.py", line 381, in _perform_authorization
+    auth_code, code_verifier = await self._perform_authorization_code_grant()
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/w/site/mcp/client/auth/oauth2.py", line 437, in _perform_authorization_code_grant
+    validate_authorization_response_iss(result.iss, self.context.oauth_metadata)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/w/site/mcp/client/auth/utils.py", line 256, in validate_authorization_response_iss
+    raise OAuthFlowError(f"Authorization response iss mismatch: {iss} != {expected}")
+mcp.client.auth.exceptions.OAuthFlowError: Authorization response iss mismatch: http://attacker.example != http://127.0.0.1:8765/as-first
+Session termination failed: 202
