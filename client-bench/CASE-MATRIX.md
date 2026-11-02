@@ -124,3 +124,60 @@ census's C18 rate meaningful or moot.
    other proprietary hosts are invisible to this method and plausibly carry most real MCP
    traffic. This is the bench's most serious external-validity limit and must be stated in the
    same paragraph as any result.
+
+## Amendment, 2 November 2026: the Tier-1 run
+
+Written before any implementation below was installed or run. The cases above and their
+"required" columns are unchanged.
+
+**Population.** Every SDK the MCP project lists as Tier 1 at modelcontextprotocol.io/docs/sdk,
+read 1 November 2026: TypeScript, Python, C#, Go, Rust and Ruby. Each at its latest release on
+2 November 2026, read from its registry that day, plus the latest release of the TypeScript v1
+line, which a large share of installed applications still carries:
+
+| SDK | Package | Release |
+|---|---|---|
+| TypeScript v1 line | `@modelcontextprotocol/sdk` (npm) | 1.32.2 |
+| TypeScript | `@modelcontextprotocol/client` (npm) | 2.4.0 |
+| Python | `mcp` (PyPI) | 2.3.0 |
+| C# | `ModelContextProtocol` (NuGet) | 2.3.0 |
+| Go | `github.com/modelcontextprotocol/go-sdk` | v1.8.0 |
+| Rust | `rmcp` (crates.io) | 3.8.0 |
+| Ruby | `mcp` (RubyGems) | 1.8.2 |
+
+The population is defined by the project's own tiering, not by convenience, but it is still
+not a sample of the clients in use, and the "of the *N* tested, *k*" form still applies.
+
+**Method: the SDK's own authorization flow, observed from the server.** Each implementation's
+client authorization flow is driven end to end against one loopback server that plays the
+protected resource and the authorization servers and approves every request. The bench plays
+the user agent: it requests the authorization URL the SDK produces, reads the redirect, and
+hands back whatever the SDK's callback interface accepts. A cell is decided from the requests
+the server *receives*, never from what the SDK returns:
+
+- A and B: **use** if the flow reaches an authorization endpoint after being served the case's
+  document, **reject** if it does not. The `resource` parameter on the authorization and token
+  requests is recorded; where it differs from the requested identifier the server has chosen
+  the token's audience.
+- C2: which authorization server's endpoint the flow reaches.
+- D: **accept** if the authorization code reaches a token endpoint, **reject** if it does not,
+  which is the moment MCP 2026-07-28 names ("before transmitting the authorization code").
+- C1: unchanged, the count of shipped files naming `protected_resources`.
+
+Where a flow cannot be driven without a browser, or the callback interface has no channel for
+a value the case varies, the cell records that, with the reason, as rule 1 requires. An SDK
+whose callback interface cannot carry `iss` cannot apply RFC 9207 itself; its D cells are
+recorded as observed, with that reason in the detail, since the obligation then falls on the
+embedding application and no SDK-level check exists.
+
+**One descriptive case added.**
+
+| ID | Observation | Strength |
+|---|---|---|
+| C3 | The authorization server's metadata publishes `protected_resources` **without** the requested resource. Does the flow proceed? | none — descriptive |
+
+C3 turns C1 from a source count into behaviour: a client that proceeds has not applied the
+RFC 9728 §7.6 cross-check, though nothing obliges it to.
+
+**Not observed: the token's audience.** Whether a token is accepted is decided by the server
+this bench configures, so observing it would measure our own configuration.
