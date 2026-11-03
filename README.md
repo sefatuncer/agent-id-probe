@@ -58,8 +58,8 @@
 >
 > We honour `robots.txt`; endpoints it excludes leave the study entirely.
 >
-> Full policy: [`docs/ETHICS.md`](docs/ETHICS.md) · Sefa Tuncer & Enis Karaarslan,
-> Muğla Sıtkı Koçman University
+> Full policy: [`docs/ETHICS.md`](docs/ETHICS.md) · Sefa Tuncer (independent researcher,
+> Ankara) & Enis Karaarslan (Muğla Sıtkı Koçman University)
 
 ---
 

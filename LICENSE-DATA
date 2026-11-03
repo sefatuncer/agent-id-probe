@@ -1,8 +1,8 @@
 Measurement data licence — Creative Commons Attribution 4.0 International
 =========================================================================
 
-Copyright 2026 Sefa Tuncer and Enis Karaarslan
-Muğla Sıtkı Koçman University
+Copyright 2026 Sefa Tuncer (independent researcher) and
+Enis Karaarslan (Muğla Sıtkı Koçman University)
 
 This licence covers the **data** produced and published by this study, not the source
 code. The source code is licensed separately under Apache-2.0; see LICENSE.
@@ -23,8 +23,7 @@ made.
 
 Suggested attribution:
 
-    Tuncer, S. and Karaarslan, E. (2026). agent-id-probe measurement dataset.
-    Muğla Sıtkı Koçman University. CC BY 4.0.
+    Tuncer, S. and Karaarslan, E. (2026). agent-id-probe measurement dataset. CC BY 4.0.
 
 A note on what is *not* published
 ---------------------------------
